@@ -2,7 +2,7 @@
 
 A professional-grade, browser-based word-level lyrics and subtitle editor. Designed for precision, efficiency, and broad format compatibility.
 
-![Logo](favicon.svg)
+<img src="favicon.svg" width="80" height="80" alt="LyricsEditor Logo">
 
 ## ✨ Features
 
