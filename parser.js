@@ -189,6 +189,15 @@ function parseJSON_(content) {
   } catch(e) { return []; }
 }
 
+function parseMetadata(content, format) {
+  const metadata = { durationMs: 0 };
+  if (format === 'lyricsfile') {
+    const match = content.match(/duration_ms:\s*(\d+)/);
+    if (match) metadata.durationMs = parseInt(match[1]);
+  }
+  return metadata;
+}
+
 function parseContent(content, format) {
   switch(format) {
     case 'lrc': return parseLRC(content);
@@ -509,7 +518,7 @@ function stringifyVTT(cues, karaoke) {
 }
 
 // ── Exporters ──
-function exportAs(cues, format) {
+function exportAs(cues, format, durationMs) {
   switch(format) {
     case 'lrc': return stringifyLRC(cues, false);
     case 'lrc_enhanced': return stringifyLRC(cues, true);
@@ -524,14 +533,14 @@ function exportAs(cues, format) {
     case 'srv3_karaoke': return stringifySRV3Karaoke(cues);
     case 'json': return JSON.stringify({ cues: cues.map(c => ({ start: c.startMs, end: c.endMs, text: c.text, words: c.words })) }, null, 2);
     case 'json3': return stringifyJSON3(cues);
-    case 'lyricsfile': return stringifyLyricsFile(cues);
+    case 'lyricsfile': return stringifyLyricsFile(cues, durationMs);
     case 'txt': return stringifyTXT(cues);
     default: return '';
   }
 }
 
-function stringifyLyricsFile(cues) {
-  let yaml = `version: "1.0"\nmetadata:\n  title: ""\n  artist: ""\n  instrumental: false\n  album: ""\n  duration_ms: 0\nlines:\n`;
+function stringifyLyricsFile(cues, durationMs) {
+  let yaml = `version: "1.0"\nmetadata:\n  title: ""\n  artist: ""\n  instrumental: false\n  album: ""\n  duration_ms: ${Math.round(durationMs || 0)}\nlines:\n`;
   cues.forEach(c => {
     yaml += `  - text: "${c.text.replace(/"/g, '\\"')}"\n`;
     yaml += `    words:\n`;

@@ -347,9 +347,13 @@ $('input-lyrics').onchange=e=>{
     const fmt=detectFormat(f.name,ev.target.result);
     lastImportFormat = fmt;
     lines=parseContent(ev.target.result,fmt);
+    const meta = parseMetadata(ev.target.result, fmt);
     autoFillWords(lines);
     let wid=1; lines.forEach(l=>{if(l.words)l.words.forEach(w=>w.id=wid++);});
-    if(!audio.src&&lines.length)duration=lines[lines.length-1].endMs+2000;
+    if(!audio.src){
+      if(meta.durationMs > 0) duration = meta.durationMs;
+      else if(lines.length) duration = lines[lines.length-1].endMs + 2000;
+    }
     history=[JSON.parse(JSON.stringify(lines))];histIdx=0;
     renderTimeline();
   };
@@ -370,7 +374,7 @@ function performExport(f) {
   if(!f || !lines.length) return;
   const ext={lrc:'lrc',lrc_enhanced:'lrc',srt:'srt',vtt:'vtt',vtt_karaoke:'vtt',ttml:'ttml',ttml_karaoke:'ttml',srv1:'srv1',srv2:'srv2',srv3:'srv3',srv3_karaoke:'srv3',json:'json',json3:'json',lyricsfile:'lyricsfile',txt:'txt'}[f]||'txt';
   const name = originalFilename + " - lyricseditor." + ext;
-  downloadFile(exportAs(lines.map(l=>({startMs:l.startMs,endMs:l.endMs,text:l.text,words:l.words})),f), name);
+  downloadFile(exportAs(lines.map(l=>({startMs:l.startMs,endMs:l.endMs,text:l.text,words:l.words})), f, duration), name);
 }
 
 $('export-menu').onclick=e=>{
