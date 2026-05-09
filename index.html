@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Premium Lyrics Editor - LRC, SRT, VTT, TTML & Subtitle Sync Tool</title>
+    <meta name="description" content="Professional word-level lyrics and subtitle editor. Supports LRC, SRT, VTT, TTML, LRCLIB, and YouTube JSON formats with high-precision synchronization.">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- Top Toolbar -->
+    <header class="toolbar">
+        <div class="toolbar-left">
+            <div class="logo">
+                <i class="fas fa-music"></i> LyricsEditor
+            </div>
+            <button class="btn tool-btn" id="btn-load-audio"><i class="fas fa-file-audio"></i> Load Audio</button>
+            <input type="file" id="input-audio" accept="audio/*,video/*,.mp3,.wav,.ogg,.m4a,.mp4,.webm" hidden>
+            <button class="btn tool-btn" id="btn-load-lyrics"><i class="fas fa-file-alt"></i> Load Lyrics</button>
+            <input type="file" id="input-lyrics" accept=".lrc,.srt,.vtt,.txt,.json,.xml,.ttml,.lyricsfile" hidden>
+
+            <!-- Undo / Redo -->
+            <button class="icon-btn" id="btn-undo" title="Undo (Ctrl+Z)"><i class="fas fa-undo"></i></button>
+            <button class="icon-btn" id="btn-redo" title="Redo (Ctrl+Shift+Z)"><i class="fas fa-redo"></i></button>
+
+            <!-- Global Tools Dropdown -->
+            <div class="dropdown-wrapper">
+                <button class="btn tool-btn" id="btn-tools"><i class="fas fa-sliders-h"></i> Tools</button>
+                <div class="dropdown-menu" id="tools-menu">
+                    <div class="dropdown-section-title">Global Tools</div>
+                    <div class="dropdown-item" id="tool-shift-time"><i class="fas fa-clock"></i> Shift Time...</div>
+                    <div class="dropdown-item" id="tool-find-replace"><i class="fas fa-exchange-alt"></i> Find & Replace</div>
+                    <div class="dropdown-item" id="tool-sort-rows"><i class="fas fa-sort-numeric-down"></i> Sort Rows by Time</div>
+                    <div class="dropdown-item" id="tool-remove-empty-lines"><i class="fas fa-trash-alt"></i> Remove Empty Lines</div>
+                    <div class="dropdown-divider"></div>
+                    <div class="dropdown-section-title">Word Tools</div>
+                    <div class="dropdown-item" id="tool-auto-karaoke"><i class="fas fa-wand-magic-sparkles"></i> Auto-Generate Word Timings</div>
+                    <div class="dropdown-item" id="tool-fill-gaps"><i class="fas fa-arrows-alt-h"></i> Fill Gaps Between Words</div>
+                    <div class="dropdown-item" id="tool-remove-empty"><i class="fas fa-eraser"></i> Remove Empty Words</div>
+                    <div class="dropdown-item" id="tool-compact-ws"><i class="fas fa-text-width"></i> Compact Whitespace</div>
+                </div>
+            </div>
+
+            <!-- Hot Fix (one-click) -->
+            <button class="btn tool-btn" id="btn-hotfix" title="Hot Fix: compact whitespace + remove empty + fill gaps"><i class="fas fa-bolt"></i> Hot Fix</button>
+        </div>
+        <div class="toolbar-center">
+            <div class="search-box">
+                <i class="fas fa-search"></i>
+                <input type="text" placeholder="Search lyrics..." id="search-input">
+            </div>
+        </div>
+        <div class="toolbar-right">
+            <div class="view-mode-toggle">
+                <button class="btn toggle-btn active" id="view-one-line">Default</button>
+                <button class="btn toggle-btn" id="view-compact">Compact</button>
+            </div>
+            <!-- Fullscreen Toggle -->
+            <button class="icon-btn" id="btn-fullscreen" title="Toggle Fullscreen"><i class="fas fa-expand"></i></button>
+
+            <!-- Export Dropdown -->
+            <div class="dropdown-wrapper">
+                <button class="btn btn-primary" id="btn-export"><i class="fas fa-download"></i> Export</button>
+                <div class="dropdown-menu dropdown-menu-right" id="export-menu">
+                    <div class="dropdown-section-title">Subtitles</div>
+                    <div class="dropdown-item" data-format="lrc"><i class="fas fa-file-alt"></i> LRC</div>
+                    <div class="dropdown-item" data-format="srt"><i class="fas fa-file-alt"></i> SRT</div>
+                    <div class="dropdown-item" data-format="vtt"><i class="fas fa-file-alt"></i> VTT</div>
+                    <div class="dropdown-item" data-format="ttml"><i class="fas fa-file-alt"></i> TTML</div>
+                    <div class="dropdown-divider"></div>
+                    <div class="dropdown-section-title">Karaoke (Word-Level)</div>
+                    <div class="dropdown-item" data-format="lrc_enhanced"><i class="fas fa-microphone-alt"></i> Enhanced LRC</div>
+                    <div class="dropdown-item" data-format="vtt_karaoke"><i class="fas fa-microphone-alt"></i> VTT (Words)</div>
+                    <div class="dropdown-item" data-format="ttml_karaoke"><i class="fas fa-microphone-alt"></i> TTML (Words)</div>
+                    <div class="dropdown-item" data-format="srv3_karaoke"><i class="fas fa-microphone-alt"></i> YouTube SRV (Words)</div>
+                    <div class="dropdown-divider"></div>
+                    <div class="dropdown-section-title">Other Formats</div>
+                    <div class="dropdown-item" data-format="srv1"><i class="fas fa-file-code"></i> YouTube SRV1</div>
+                    <div class="dropdown-item" data-format="srv2"><i class="fas fa-file-code"></i> YouTube SRV2</div>
+                    <div class="dropdown-item" data-format="srv3"><i class="fas fa-file-code"></i> YouTube SRV3</div>
+                    <div class="dropdown-item" data-format="json"><i class="fas fa-code"></i> JSON</div>
+                    <div class="dropdown-item" data-format="json3"><i class="fas fa-code"></i> YouTube JSON3</div>
+                    <div class="dropdown-item" data-format="lyricsfile"><i class="fas fa-file-code"></i> LRCLIB (.lyricsfile)</div>
+                    <div class="dropdown-item" data-format="txt"><i class="fas fa-font"></i> Plain Text</div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Editor Area -->
+    <main class="editor-container">
+        <div class="timeline-header">
+            <div class="timeline-title" style="display:flex; align-items:center;">
+                <label for="check-all-lines" style="display:flex; align-items:center; cursor:pointer; margin-right:16px; color:var(--text-main);">
+                    <input type="checkbox" id="check-all-lines" style="margin-right:6px; cursor:pointer;">
+                    Select All / None
+                </label>
+                
+                <div id="file-info-display" style="display:flex; gap:12px; margin-right:20px; font-size:11px; color:var(--text-muted); align-items:center; border-right: 1px solid var(--border); padding-right: 20px;">
+                    <span id="audio-filename-display" style="display:none; white-space:nowrap; max-width:150px; overflow:hidden; text-overflow:ellipsis;" title="Audio Source"><i class="fas fa-music" style="margin-right:4px; color:var(--accent);"></i><span class="fname"></span></span>
+                    <span id="lyrics-filename-display" style="display:none; white-space:nowrap; max-width:150px; overflow:hidden; text-overflow:ellipsis;" title="Lyrics Source"><i class="fas fa-file-lines" style="margin-right:4px; color:var(--accent);"></i><span class="fname"></span></span>
+                </div>
+
+                <span style="white-space:nowrap;">Timeline View (Drag words or boundaries to adjust)</span>
+            </div>
+            <div class="timeline-controls">
+                <button class="icon-btn" id="btn-prev-line" title="Previous Line"><i class="fas fa-chevron-up"></i></button>
+                <button class="icon-btn" id="btn-next-line" title="Next Line"><i class="fas fa-chevron-down"></i></button>
+            </div>
+        </div>
+        
+        <div class="timeline-scroll-area" id="timeline-container">
+            <div class="placeholder-text">Load audio and lyrics to start editing</div>
+        </div>
+    </main>
+
+    <!-- Bottom Playback Controls -->
+    <footer class="player-controls">
+        <button class="play-btn" id="btn-play-pause"><i class="fas fa-play"></i></button>
+        <button class="icon-btn" id="btn-stop"><i class="fas fa-stop"></i></button>
+        <button class="icon-btn" id="btn-repeat" title="Loop current line"><i class="fas fa-redo"></i></button>
+        
+        <div class="time-display" id="time-display">00:00.00 / 00:00.00</div>
+        
+        <div class="progress-bar-container">
+            <div class="progress-bar" id="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+        </div>
+        
+        <div class="volume-control">
+            <i class="fas fa-volume-up"></i>
+            <input type="range" class="volume-slider" min="0" max="1" step="0.01" value="1" id="volume-slider">
+        </div>
+        <div class="stats">
+            Lines: <span id="stat-lines">0</span> | Words: <span id="stat-words">0</span>
+        </div>
+    </footer>
+
+    <!-- Shift Time Modal -->
+    <div class="modal-overlay" id="shift-modal" style="display:none">
+        <div class="modal-box">
+            <h3>Shift Time</h3>
+            <p style="color:var(--text-muted); font-size:13px; margin-bottom:16px;">Offset all timestamps by a specified amount (milliseconds).</p>
+            <div style="display:flex; gap:8px; align-items:center; margin-bottom:16px;">
+                <button class="btn" id="shift-minus-500">-500ms</button>
+                <button class="btn" id="shift-minus-100">-100ms</button>
+                <input type="number" id="shift-amount" value="0" style="width:100px; padding:8px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:4px; font-family:monospace; text-align:center;">
+                <button class="btn" id="shift-plus-100">+100ms</button>
+                <button class="btn" id="shift-plus-500">+500ms</button>
+            </div>
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+                <button class="btn" id="shift-cancel">Cancel</button>
+                <button class="btn btn-primary" id="shift-apply">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Find & Replace Modal -->
+    <div class="modal-overlay" id="find-replace-modal" style="display:none">
+        <div class="modal-box">
+            <h3>Find & Replace</h3>
+            <div style="display:flex; flex-direction:column; gap:12px; margin:16px 0;">
+                <input type="text" id="find-text" placeholder="Find..." style="padding:8px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:4px;">
+                <input type="text" id="replace-text" placeholder="Replace with..." style="padding:8px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:4px;">
+            </div>
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+                <button class="btn" id="fr-cancel">Cancel</button>
+                <button class="btn btn-primary" id="fr-apply">Replace All</button>
+            </div>
+        </div>
+    </div>
+    <!-- Edit Text Modal -->
+    <div class="modal-overlay" id="edit-text-modal" style="display:none">
+        <div class="modal-box" style="min-width: 450px;">
+            <h3>Edit Lyric Line</h3>
+            <div style="margin:16px 0;">
+                <textarea id="edit-text-input" style="width:100%; height:120px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:4px; padding:12px; font-family:inherit; font-size:14px; line-height:1.5; resize: vertical;"></textarea>
+                <div style="font-size:11px; color:var(--text-muted); margin-top:8px;">
+                    <i class="fas fa-info-circle"></i> If word count changes, timings will be redistributed evenly.
+                </div>
+            </div>
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+                <button class="btn" id="et-cancel">Cancel</button>
+                <button class="btn btn-primary" id="et-apply">Apply Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="parser.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
