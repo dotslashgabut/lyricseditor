@@ -621,6 +621,11 @@ html, body {
     box-shadow: 0 16px 48px rgba(0,0,0,0.5);
 }
 
+.modal-box::-webkit-scrollbar { width: 4px; }
+.modal-box::-webkit-scrollbar-track { background: transparent; }
+.modal-box::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.modal-box::-webkit-scrollbar-thumb:hover { background: #555; }
+
 .modal-box h3 {
     font-size: 16px;
     margin-bottom: 8px;

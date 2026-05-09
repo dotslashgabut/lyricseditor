@@ -551,6 +551,12 @@ $('btn-fullscreen').onclick = () => {
     }
 };
 
+// ── Shortcuts Modal ──
+$('btn-shortcuts').onclick = () => $('shortcuts-modal').style.display = 'flex';
+$('shortcuts-close').onclick = () => $('shortcuts-modal').style.display = 'none';
+$('shortcuts-close-top').onclick = () => $('shortcuts-modal').style.display = 'none';
+window.addEventListener('click', (e) => { if (e.target === $('shortcuts-modal')) $('shortcuts-modal').style.display = 'none'; });
+
 // Handle Esc key or other fullscreen exits
 document.addEventListener('fullscreenchange', () => {
     if (!document.fullscreenElement) {
