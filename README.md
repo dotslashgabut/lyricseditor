@@ -8,6 +8,8 @@ A professional-grade, browser-based word-level lyrics and subtitle editor. Desig
 
 </div>
 
+![LyricsEditor Screenshot](Screenshot.png)
+
 ## ✨ Features
 
 - **Word-Level Precision**: Adjust timings for individual words using an intuitive drag-and-drop timeline.
