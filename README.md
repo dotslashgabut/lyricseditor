@@ -79,8 +79,8 @@ A professional-grade, browser-based word-level lyrics and subtitle editor. Desig
 
 To use LyricsEditor without an internet connection, you need to localize external dependencies:
 
-### 1. Download Font Awesome 6.4.0
-1. Download the **Font Awesome Free for Web** version `6.4.0` [here](https://fontawesome.com/download).
+### 1. Download Font Awesome 6.7.2
+1. Download the **Font Awesome Free for Web** version `6.7.2` [here](https://fontawesome.com/download).
 2. Extract the archive and copy the `css` and `webfonts` folders into your project directory (e.g., into a folder named `lib/font-awesome`).
 3. Update the link in `index.html`:
    ```diff
