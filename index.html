@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,17 +11,15 @@
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://dotslashgabut.github.io/lyricseditor/">
     <meta property="og:title" content="Premium Lyrics Editor - LRC, SRT, VTT, TTML & Subtitle Sync Tool">
-    <meta property="og:description"
-        content="Professional word-level lyrics and subtitle editor. High-precision synchronization for LRC, SRT, VTT, and more.">
+    <meta property="og:description" content="Professional word-level lyrics and subtitle editor. High-precision synchronization for LRC, SRT, VTT, and more.">
     <meta property="og:image" content="https://dotslashgabut.github.io/lyricseditor/screenshot.png">
 
     <!-- Twitter / X -->
     <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:site" content="@dotslashgabut">
+    <meta name="twitter:site" content="@dotslashgabut">
     <meta name="twitter:url" content="https://dotslashgabut.github.io/lyricseditor/">
     <meta name="twitter:title" content="Premium Lyrics Editor - LRC, SRT, VTT, TTML & Subtitle Sync Tool">
-    <meta name="twitter:description"
-        content="Professional word-level lyrics and subtitle editor. High-precision synchronization for LRC, SRT, VTT, and more.">
+    <meta name="twitter:description" content="Professional word-level lyrics and subtitle editor. High-precision synchronization for LRC, SRT, VTT, and more.">
     <meta name="twitter:image" content="https://dotslashgabut.github.io/lyricseditor/screenshot.png">
 
     <link rel="stylesheet" href="styles.css">
@@ -28,6 +27,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
+
 <body>
     <!-- Top Toolbar -->
     <header class="toolbar">
@@ -119,7 +119,7 @@
                     <input type="checkbox" id="check-all-lines" style="margin-right:6px; cursor:pointer;">
                     Select All / None
                 </label>
-                
+
                 <div id="file-info-display" style="display:flex; gap:12px; margin-right:20px; font-size:11px; color:var(--text-muted); align-items:center; border-right: 1px solid var(--border); padding-right: 20px;">
                     <span id="audio-filename-display" style="display:none; white-space:nowrap; max-width:150px; overflow:hidden; text-overflow:ellipsis;" title="Audio Source"><i class="fas fa-music" style="margin-right:4px; color:var(--accent);"></i><span class="fname"></span></span>
                     <span id="lyrics-filename-display" style="display:none; white-space:nowrap; max-width:150px; overflow:hidden; text-overflow:ellipsis;" title="Lyrics Source"><i class="fas fa-file-lines" style="margin-right:4px; color:var(--accent);"></i><span class="fname"></span></span>
@@ -132,7 +132,7 @@
                 <button class="icon-btn" id="btn-next-line" title="Next Line"><i class="fas fa-chevron-down"></i></button>
             </div>
         </div>
-        
+
         <div class="timeline-scroll-area" id="timeline-container">
             <div class="placeholder-text">Load audio and lyrics to start editing</div>
         </div>
@@ -143,15 +143,15 @@
         <button class="play-btn" id="btn-play-pause"><i class="fas fa-play"></i></button>
         <button class="icon-btn" id="btn-stop"><i class="fas fa-stop"></i></button>
         <button class="icon-btn" id="btn-repeat" title="Loop current line"><i class="fas fa-redo"></i></button>
-        
+
         <div class="time-display" id="time-display">00:00.00 / 00:00.00</div>
-        
+
         <div class="progress-bar-container">
             <div class="progress-bar" id="progress-bar">
                 <div class="progress-fill" id="progress-fill"></div>
             </div>
         </div>
-        
+
         <div class="volume-control">
             <i class="fas fa-volume-up"></i>
             <input type="range" class="volume-slider" min="0" max="1" step="0.01" value="1" id="volume-slider">
@@ -292,5 +292,7 @@
 
       gtag('config', 'G-VTS4PY9E9X');
     </script>
+
 </body>
+
 </html>

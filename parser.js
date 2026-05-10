@@ -53,7 +53,7 @@ function msToVtt(ms) { return msToSrt(ms).replace(',','.'); }
 
 function parseLRC(content) {
   const lines = content.split(/\r?\n/), cues = [];
-  const re = /^(\s*\[\d{1,3}:\d{2}(?:\.\d{2,3})?\]\s*)+(.*)/, wre = /<(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d{1,3})?)>([^<]*)/g;
+  const re = /^(\s*\[\d{1,3}:\d{2}(?:\.\d{2,3})?\]\s*)+(.*)/;
   let id = 1, wid = 1;
   lines.forEach((line, li) => {
     const m = line.match(re);
@@ -62,33 +62,92 @@ function parseLRC(content) {
     const tms = []; let tm;
     const tre = /\[(\d{1,3}:\d{2}(?:\.\d{2,3})?)\]/g;
     while ((tm = tre.exec(ts))) tms.push(timeToMs(tm[1]));
-    let text = raw, words = [];
+    let words = [];
     if (raw.includes('<') && raw.includes('>')) {
-      text = raw.replace(/<[^>]+>/g, '').trim();
-      let wm;
-      while ((wm = wre.exec(raw))) {
-        if (wm[2].trim()) words.push({ id: wid++, text: wm[2].trim(), startMs: timeToMs(wm[1]), endMs: 0 });
+      const wre = /<(\d{1,3}:\d{2}(?:\.\d{2,3})?)>/g;
+      const wordMatches = [...raw.matchAll(wre)];
+      
+      // Handle text before the first tag
+      if (wordMatches.length > 0 && wordMatches[0].index > 0) {
+        const preText = raw.substring(0, wordMatches[0].index).trim();
+        if (preText) {
+          words.push({ id: wid++, text: preText, startMs: tms[0] || 0, endMs: timeToMs(wordMatches[0][1]) });
+        }
       }
-      for (let i = 0; i < words.length - 1; i++) words[i].endMs = words[i+1].startMs;
-    } else {
-      text = raw.trim();
+
+      wordMatches.forEach((m, i) => {
+        const startMs = timeToMs(m[1]);
+        const startIdx = m.index + m[0].length;
+        const endIdx = (i < wordMatches.length - 1) ? wordMatches[i+1].index : raw.length;
+        const wordText = raw.substring(startIdx, endIdx); // Don't trim yet to preserve spaces
+        
+        if (wordText !== "") {
+          words.push({
+            id: wid++,
+            text: wordText, // Keep spaces to maintain LRC structure
+            startMs: startMs,
+            endMs: 0
+          });
+        }
+      });
+      
+      if (words.length) {
+        for (let i = 0; i < words.length - 1; i++) {
+          if (words[i].endMs <= words[i].startMs) words[i].endMs = words[i+1].startMs;
+        }
+      }
     }
+    
+    // Clean up line text for display: remove tags and collapse extra spaces
+    let cleanText = raw.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+
     tms.forEach(start => {
-      cues.push({ id: id++, startMs: start, endMs: start + 3000, text, words: words.length ? words.map(w => ({...w})) : null });
+      cues.push({ id: id++, startMs: start, endMs: start + 3000, text: cleanText, words: words.length ? words.map(w => ({...w})) : null });
     });
   });
+  
   cues.sort((a,b) => a.startMs - b.startMs);
-  for (let i = 0; i < cues.length - 1; i++) cues[i].endMs = cues[i+1].startMs;
-  cues.forEach(c => {
+  for (let i = 0; i < cues.length - 1; i++) {
+    cues[i].endMs = cues[i+1].startMs;
+  }
+  
+  if (cues.length > 0) {
+    const last = cues[cues.length - 1];
+    if (last.endMs <= last.startMs) {
+      last.endMs = last.startMs + 3000;
+    }
+  }
+
+  // Ensure line duration covers all words and last words end at line end
+  cues.forEach((c, idx) => {
     if (c.words && c.words.length) {
-      if (c.words[c.words.length-1].endMs <= c.words[c.words.length-1].startMs) c.words[c.words.length-1].endMs = c.endMs;
-      // Fill words to line
-      c.words[0].startMs = c.startMs;
-      for (let i = 0; i < c.words.length-1; i++) { c.words[i].endMs = c.words[i+1].startMs; }
-      c.words[c.words.length-1].endMs = c.endMs;
+      const lastW = c.words[c.words.length-1];
+      
+      if (idx === cues.length - 1) {
+        // Very last line in the file: give the last word 3s from ITS start time if missing
+        if (lastW.endMs <= lastW.startMs) {
+          lastW.endMs = lastW.startMs + 3000;
+        }
+        // Ensure the line covers this extended word
+        c.endMs = Math.max(c.endMs, lastW.endMs);
+        lastW.endMs = c.endMs; // Seal perfectly to line end
+      } else {
+        // Other lines: sync last word to the line boundary
+        if (lastW.endMs <= lastW.startMs) {
+          lastW.endMs = c.endMs;
+        }
+        // If line is cut too short by next line, extend it to at least cover the last word
+        if (c.endMs <= lastW.startMs) {
+          c.endMs = lastW.startMs + 500;
+          lastW.endMs = c.endMs;
+        }
+        // Always ensure line covers all its words
+        if (lastW.endMs > c.endMs) c.endMs = lastW.endMs;
+      }
     }
   });
-  return cues;
+
+  return cues.filter(c => c.text.trim() || (c.words && c.words.length > 0));
 }
 
 function parseSRT(content) {
@@ -199,19 +258,31 @@ function parseMetadata(content, format) {
 }
 
 function parseContent(content, format) {
+  let cues = [];
   switch(format) {
-    case 'lrc': return parseLRC(content);
-    case 'srt': return parseSRT(content);
-    case 'vtt': return parseVTT(content);
-    case 'json': return parseJSON_(content);
-    case 'lyricsfile': return parseLyricsFile(content);
-    case 'ttml': return parseTTML(content);
-    case 'srv1': return parseSRV1(content);
+    case 'lrc': cues = parseLRC(content); break;
+    case 'srt': cues = parseSRT(content); break;
+    case 'vtt': cues = parseVTT(content); break;
+    case 'json': cues = parseJSON_(content); break;
+    case 'lyricsfile': cues = parseLyricsFile(content); break;
+    case 'ttml': cues = parseTTML(content); break;
+    case 'srv1': cues = parseSRV1(content); break;
     case 'srv2':
-    case 'srv3': return parseSRV23(content);
-    case 'txt': return parseTXT(content);
-    default: return parseSRT(content);
+    case 'srv3': cues = parseSRV23(content); break;
+    case 'txt': cues = parseTXT(content); break;
+    default: cues = parseSRT(content);
   }
+  // Safety pass: ensure the very last cue has a duration if missing
+  if (cues.length > 0) {
+    const last = cues[cues.length - 1];
+    if (last.endMs <= last.startMs) last.endMs = last.startMs + 3000;
+    
+    // Ensure all other cues have at least some minimal duration to prevent UI bugs
+    cues.forEach(c => {
+      if (c.endMs <= c.startMs) c.endMs = c.startMs + 100;
+    });
+  }
+  return cues;
 }
 
 function parseTTML(content) {
@@ -314,7 +385,12 @@ function parseLyricsFile(content) {
     const lineStartMatch = block.match(/\n\s{2,6}start_ms:\s*(\d+)/);
     const lineEndMatch = block.match(/\n\s{2,6}end_ms:\s*(\d+)/);
     const startMs = lineStartMatch ? parseInt(lineStartMatch[1]) : 0;
-    const endMs = lineEndMatch ? parseInt(lineEndMatch[1]) : 0;
+    let endMs = lineEndMatch ? parseInt(lineEndMatch[1]) : 0;
+    
+    // Estimation logic (always 3s fallback)
+    if (endMs <= startMs) {
+      endMs = startMs + 3000;
+    }
 
     const words = [];
     const wordsMatch = block.match(/words:\s*([\s\S]*?)(?:\n\s{2,6}(?:start|end)_ms:|$)/);
@@ -333,18 +409,36 @@ function parseLyricsFile(content) {
         }
         
         const wStartMatch = wBlock.match(/start_ms:\s*(\d+)/);
+        const wEndMatch = wBlock.match(/end_ms:\s*(\d+)/);
+        const wStart = wStartMatch ? parseInt(wStartMatch[1]) : startMs;
+        const wEnd = wEndMatch ? parseInt(wEndMatch[1]) : 0;
+        
         words.push({
           id: (idx * 1000) + wIdx + 1,
           text: wText,
-          startMs: wStartMatch ? parseInt(wStartMatch[1]) : startMs,
-          endMs: 0
+          startMs: wStart,
+          endMs: wEnd
         });
       });
-      for (let j = 0; j < words.length - 1; j++) words[j].endMs = words[j+1].startMs;
-      if (words.length) words[words.length-1].endMs = endMs;
+      // Fill gaps for words missing end_ms
+      for (let j = 0; j < words.length - 1; j++) {
+        if (words[j].endMs <= words[j].startMs) words[j].endMs = words[j+1].startMs;
+      }
+      if (words.length && words[words.length-1].endMs <= words[words.length-1].startMs) {
+        words[words.length-1].endMs = endMs;
+      }
     }
 
     cues.push({ id: idx + 1, text, startMs, endMs, words: words.length ? words : null });
+  });
+
+  // Ensure line duration covers all words
+  cues.forEach(c => {
+    if (c.words && c.words.length) {
+      const lastW = c.words[c.words.length-1];
+      if (lastW.endMs > c.endMs) c.endMs = lastW.endMs;
+      c.words[c.words.length-1].endMs = Math.max(lastW.endMs, c.endMs);
+    }
   });
 
   return cues;
@@ -519,22 +613,25 @@ function stringifyVTT(cues, karaoke) {
 
 // ── Exporters ──
 function exportAs(cues, format, durationMs) {
+  // Deep copy to avoid modifying original editor state
+  const exportCues = JSON.parse(JSON.stringify(cues));
+
   switch(format) {
-    case 'lrc': return stringifyLRC(cues, false);
-    case 'lrc_enhanced': return stringifyLRC(cues, true);
-    case 'srt': return stringifySRT(cues);
-    case 'vtt': return stringifyVTT(cues, false);
-    case 'vtt_karaoke': return stringifyVTT(cues, true);
-    case 'ttml': return stringifyTTML(cues, false);
-    case 'ttml_karaoke': return stringifyTTML(cues, true);
-    case 'srv1': return stringifySRV1(cues);
-    case 'srv2': return stringifySRV2(cues);
-    case 'srv3': return stringifySRV3(cues);
-    case 'srv3_karaoke': return stringifySRV3Karaoke(cues);
-    case 'json': return JSON.stringify({ cues: cues.map(c => ({ start: c.startMs, end: c.endMs, text: c.text, words: c.words })) }, null, 2);
-    case 'json3': return stringifyJSON3(cues);
-    case 'lyricsfile': return stringifyLyricsFile(cues, durationMs);
-    case 'txt': return stringifyTXT(cues);
+    case 'lrc': return stringifyLRC(exportCues, false);
+    case 'lrc_enhanced': return stringifyLRC(exportCues, true);
+    case 'srt': return stringifySRT(exportCues);
+    case 'vtt': return stringifyVTT(exportCues, false);
+    case 'vtt_karaoke': return stringifyVTT(exportCues, true);
+    case 'ttml': return stringifyTTML(exportCues, false);
+    case 'ttml_karaoke': return stringifyTTML(exportCues, true);
+    case 'srv1': return stringifySRV1(exportCues);
+    case 'srv2': return stringifySRV2(exportCues);
+    case 'srv3': return stringifySRV3(exportCues);
+    case 'srv3_karaoke': return stringifySRV3Karaoke(exportCues);
+    case 'json': return JSON.stringify({ cues: exportCues.map(c => ({ start: c.startMs, end: c.endMs, text: c.text, words: c.words })) }, null, 2);
+    case 'json3': return stringifyJSON3(exportCues);
+    case 'lyricsfile': return stringifyLyricsFile(exportCues, durationMs);
+    case 'txt': return stringifyTXT(exportCues);
     default: return '';
   }
 }

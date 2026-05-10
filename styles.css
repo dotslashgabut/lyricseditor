@@ -394,7 +394,7 @@ html, body {
     background: #111;
     border-radius: var(--radius-sm);
     border: 1px solid #222;
-    overflow: visible;
+    overflow: hidden; /* This stays to fix the overflow issue */
 }
 
 .playback-indicator {
@@ -441,6 +441,9 @@ html, body {
     user-select: none;
     transition: background-color 0.15s ease;
     z-index: 5;
+    min-width: 2px;
+    max-width: 100%;
+    overflow: hidden;
     touch-action: none;
 }
 

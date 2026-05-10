@@ -2,7 +2,7 @@
 let audio = new Audio(), lines = [], isPlaying = false, isRepeat = false;
 let currentTime = 0, duration = 0, rafId = null, activeLineId = null;
 let history = [[]], histIdx = 0, originalFilename = 'lyrics', editingLine = null;
-let lastImportFormat = 'lrc';
+let lastImportFormat = 'lrc', audioFilename = '', lyricsFilename = '';
 
 const $ = id => document.getElementById(id);
 const playBtn=$('btn-play-pause'), stopBtn=$('btn-stop'), repeatBtn=$('btn-repeat');
@@ -37,7 +37,7 @@ function renderTimeline() {
   lines.forEach((line,idx) => {
     if(!line.words)line.words=[];
     tw += line.words.length;
-    const ld = (line.endMs - line.startMs)/1000;
+    const ld = Math.max(0.05, (line.endMs - line.startMs)/1000);
     const tr = document.createElement('div');
     tr.className='timeline-track'; tr.id=`tc-${line.id}`;
     tr.innerHTML=`<div class="track-controls"><input type="checkbox" class="line-checkbox" data-id="${line.id}" style="cursor:pointer; margin-right:4px;" title="Select this line"><span style="color:var(--text-muted);font-size:11px;width:14px">${idx+1}</span><button class="track-play-btn" data-start="${line.startMs}" data-end="${line.endMs}"><i class="fas fa-play" style="font-size:9px;margin-left:1px"></i></button><div class="track-info">${fmt(line.startMs/1000)}</div></div><div class="track-content" id="trk-${line.id}"><div class="playback-indicator" id="pi-${line.id}"></div></div><div class="track-end-time">${fmt(line.endMs/1000)}</div><button class="icon-btn track-edit-btn" title="Edit Line Text"><i class="fas fa-edit"></i></button><button class="icon-btn track-delete-btn" title="Delete Line"><i class="fas fa-trash"></i></button>`;
@@ -107,12 +107,15 @@ function insertBlankLine(idx) {
 }
 
 function posWord(el, w, line) {
-  const ld = line.endMs - line.startMs;
-  if(ld<=0)return;
-  el.style.left = ((w.startMs-line.startMs)/ld*100)+'%';
-  el.style.width = ((w.endMs-w.startMs)/ld*100)+'%';
-  const d=el.querySelector('.word-duration');
-  if(d)d.textContent=((w.endMs-w.startMs)/1000).toFixed(2)+'s';
+  const ld = Math.max(1, line.endMs - line.startMs);
+  const leftPercent = Math.max(0, (w.startMs - line.startMs) / ld * 100);
+  const widthPercent = Math.max(1, Math.min(100 - leftPercent, (w.endMs - w.startMs) / ld * 100));
+  
+  el.style.left = leftPercent + '%';
+  el.style.width = widthPercent + '%';
+  
+  const d = el.querySelector('.word-duration');
+  if(d) d.textContent = ((w.endMs - w.startMs) / 1000).toFixed(2) + 's';
 }
 
 // ── Drag Logic ──
@@ -320,21 +323,64 @@ $('input-audio').onchange=e=>{
   const f=e.target.files[0];
   if(f){
     stopPlay();
-    originalFilename = f.name.replace(/\.[^/.]+$/, "");
-    audio.src=URL.createObjectURL(f);
+    audioFilename = f.name.replace(/\.[^/.]+$/, "");
+    originalFilename = audioFilename;
+    
+    // Revoke old URL if it exists to free memory
+    if(audio.src) URL.revokeObjectURL(audio.src);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      // Create a fresh Blob from the array buffer - this often fixes demuxer issues
+      const blob = new Blob([event.target.result], { type: f.type || 'audio/mpeg' });
+      const url = URL.createObjectURL(blob);
+      audio.src = url;
+      audio.load(); // Explicitly trigger demuxer
+    };
+    reader.onerror = () => console.error("Error reading audio file");
+    reader.readAsArrayBuffer(f);
     
     // Update display
     const disp = $('audio-filename-display');
     disp.style.display = 'inline-flex';
     disp.querySelector('.fname').textContent = f.name;
     disp.title = `Audio: ${f.name}`;
+    e.target.value = ""; 
   }
+};
+
+// Handle audio errors (Chromium PTS issues, corrupt FLAC, etc.)
+audio.onerror = () => {
+  const err = audio.error;
+  let msg = "Audio error occurred";
+  let details = "";
+  if (err) {
+    switch (err.code) {
+      case 1: msg = "Audio fetching process aborted."; break;
+      case 2: msg = "Network error while loading audio."; break;
+      case 3: 
+        msg = "Audio error occurred: PipelineStatus::DEMUXER_ERROR_COULD_NOT_PARSE: FFmpegDemuxer: PTS is not defined (Corrupt FLAC/Audio file)."; 
+        break;
+      case 4: msg = "Audio format not supported by this browser."; break;
+    }
+    details = err.message ? `\nBrowser Details: ${err.message}` : "";
+    console.error("Audio Error Code:", err.code, "Message:", err.message);
+  }
+  
+  alert(`${msg}${details}\n\nPlease convert the audio to a standard MP3/WAV, or try using Firefox.`);
+  
+  // Revert UI since audio failed
+  stopPlay();
+  audioFilename = "";
+  $('audio-filename-display').style.display = 'none';
+  if(lines.length === 0) $('placeholder').style.display = 'flex';
 };
 $('btn-load-lyrics').onclick=()=>$('input-lyrics').click();
 $('input-lyrics').onchange=e=>{
   const f=e.target.files[0];if(!f)return;
   stopPlay();
-  originalFilename = f.name.replace(/\.[^/.]+$/, "");
+  lyricsFilename = f.name.replace(/\.[^/.]+$/, "");
+  if(!audioFilename) originalFilename = lyricsFilename;
   
   // Update display
   const disp = $('lyrics-filename-display');
@@ -346,16 +392,21 @@ $('input-lyrics').onchange=e=>{
   r.onload=ev=>{
     const fmt=detectFormat(f.name,ev.target.result);
     lastImportFormat = fmt;
+    
     lines=parseContent(ev.target.result,fmt);
     const meta = parseMetadata(ev.target.result, fmt);
     autoFillWords(lines);
     let wid=1; lines.forEach(l=>{if(l.words)l.words.forEach(w=>w.id=wid++);});
+    
+    // Always calculate a reasonable project duration if no audio is loaded
     if(!audio.src){
       if(meta.durationMs > 0) duration = meta.durationMs;
       else if(lines.length) duration = lines[lines.length-1].endMs + 2000;
     }
+    
     history=[JSON.parse(JSON.stringify(lines))];histIdx=0;
     renderTimeline();
+    e.target.value = ""; // Clear to allow re-loading same file
   };
   r.readAsText(f);
 };
