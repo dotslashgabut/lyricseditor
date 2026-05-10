@@ -2,9 +2,9 @@
   
 # LyricsEditor - Premium Lyrics & Subtitle Tool
 
-A professional-grade, browser-based word-level lyrics and subtitle editor. Designed for precision, efficiency, and broad format compatibility.
-
 <img src="favicon.svg" width="80" height="80" alt="LyricsEditor Logo">
+
+A professional-grade, browser-based word-level lyrics and subtitle editor. Designed for precision, efficiency, and broad format compatibility.
 
 </div>
 
