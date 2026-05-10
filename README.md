@@ -84,7 +84,7 @@ To use LyricsEditor without an internet connection, you need to localize externa
 2. Extract the archive and copy the `css` and `webfonts` folders into your project directory (e.g., into a folder named `lib/font-awesome`).
 3. Update the link in `index.html`:
    ```diff
-   - <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+   - <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
    + <link rel="stylesheet" href="lib/font-awesome/css/all.min.css">
    ```
 
