@@ -5,8 +5,8 @@ function detectFormat(filename, content) {
   if (t.startsWith('WEBVTT')) return 'vtt';
   if (t.includes('<tt') && t.includes('xmlns="http://www.w3.org/ns/ttml"')) return 'ttml';
   if (t.includes('<transcript')) return 'srv1';
-  if (t.includes('<timedtext') && t.includes('format="2"')) return 'srv2';
   if (t.includes('<timedtext') && t.includes('format="3"')) return 'srv3';
+  if (t.includes('<timedtext')) return 'srv2';
   if (t.includes('version: "1.0"') && t.includes('lines:')) return 'lyricsfile';
   if (filename.endsWith('.srt')) return 'srt';
   if (filename.endsWith('.vtt')) return 'vtt';
@@ -267,7 +267,7 @@ function parseContent(content, format) {
     case 'lyricsfile': cues = parseLyricsFile(content); break;
     case 'ttml': cues = parseTTML(content); break;
     case 'srv1': cues = parseSRV1(content); break;
-    case 'srv2':
+    case 'srv2': cues = parseSRV2(content); break;
     case 'srv3': cues = parseSRV23(content); break;
     case 'txt': cues = parseTXT(content); break;
     default: cues = parseSRT(content);
@@ -324,6 +324,87 @@ function parseSRV1(content) {
     const durMs = Math.round(parseFloat(t.getAttribute('dur')) * 1000);
     cues.push({ id: i + 1, startMs, endMs: startMs + durMs, text: t.textContent.trim(), words: null });
   }
+  return cues;
+}
+
+function parseSRV2(content) {
+  const parser = new DOMParser();
+  const xml = parser.parseFromString(content, "text/xml");
+  const texts = xml.getElementsByTagName('text');
+  
+  const ps = xml.getElementsByTagName('p');
+  if (ps.length > 0 && texts.length === 0) {
+    return parseSRV23(content); // Fallback to old behavior
+  }
+
+  const cues = [];
+  let currentWords = [];
+  
+  function flushLine() {
+    if (currentWords.length > 0) {
+      const lineText = currentWords.map(w => w.text).join('').trim();
+      cues.push({
+        id: cues.length + 1,
+        startMs: currentWords[0].startMs,
+        endMs: currentWords[currentWords.length - 1].endMs,
+        text: lineText,
+        words: currentWords.map((w, widx) => ({
+          id: widx + 1,
+          text: w.text.trim(),
+          startMs: w.startMs,
+          endMs: w.endMs
+        }))
+      });
+      currentWords = [];
+    }
+  }
+
+  for (let i = 0; i < texts.length; i++) {
+    const node = texts[i];
+    const textContent = node.textContent.replace(/\r/g, '');
+    const tAttr = node.getAttribute('t');
+    const dAttr = node.getAttribute('d');
+    
+    const startMs = tAttr ? parseInt(tAttr) : 0;
+    const durMs = dAttr ? parseInt(dAttr) : 0;
+    
+    let endMs = startMs + durMs;
+    if (i + 1 < texts.length) {
+       const nextT = texts[i+1].getAttribute('t');
+       if (nextT) endMs = parseInt(nextT);
+    }
+    
+    if (textContent === '\n') {
+      flushLine();
+      continue;
+    }
+    
+    if (textContent.includes('\n')) {
+      const parts = textContent.split('\n');
+      for (let j = 0; j < parts.length; j++) {
+         if (parts[j] !== '') {
+            currentWords.push({
+               text: parts[j],
+               startMs: startMs,
+               endMs: endMs
+            });
+         }
+         if (j < parts.length - 1) {
+            flushLine();
+         }
+      }
+      continue;
+    }
+
+    currentWords.push({
+      text: textContent,
+      startMs: startMs,
+      endMs: endMs
+    });
+  }
+  
+  flushLine();
+
   return cues;
 }
 

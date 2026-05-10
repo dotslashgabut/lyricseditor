@@ -38,7 +38,7 @@
             <button class="btn tool-btn" id="btn-load-audio"><i class="fas fa-file-audio"></i> Load Audio</button>
             <input type="file" id="input-audio" accept="audio/*,video/*,.mp3,.wav,.ogg,.m4a,.mp4,.webm" hidden>
             <button class="btn tool-btn" id="btn-load-lyrics"><i class="fas fa-file-alt"></i> Load Lyrics</button>
-            <input type="file" id="input-lyrics" accept=".lrc,.srt,.vtt,.txt,.json,.xml,.ttml,.lyricsfile" hidden>
+            <input type="file" id="input-lyrics" accept=".lrc,.srt,.vtt,.txt,.json,.xml,.ttml,.lyricsfile,.srv1,.srv2,.srv3" hidden>
 
             <!-- Undo / Redo -->
             <button class="icon-btn" id="btn-undo" title="Undo (Ctrl+Z)"><i class="fas fa-undo"></i></button>
@@ -220,58 +220,76 @@
             </div>
             <div class="shortcuts-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size:13px;">
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
-                    <span style="color:var(--text-muted);">Load Audio</span> <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">1</kbd>
+                    <span style="color:var(--text-muted);">Load Audio</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">1</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
-                    <span style="color:var(--text-muted);">Load Lyrics</span> <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">2</kbd>
+                    <span style="color:var(--text-muted);">Load Lyrics</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">2</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
-                    <span style="color:var(--text-muted);">Play / Pause</span> <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">Space</kbd>
+                    <span style="color:var(--text-muted);">Play / Pause</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">Space</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
-                    <span style="color:var(--text-muted);">Stop</span> <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">S</kbd>
+                    <span style="color:var(--text-muted);">Stop</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">S</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
-                    <span style="color:var(--text-muted);">Toggle Repeat</span> <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">R</kbd>
+                    <span style="color:var(--text-muted);">Toggle Repeat</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">R</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
-                    <span style="color:var(--text-muted);">Mute / Unmute</span> <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">M</kbd>
+                    <span style="color:var(--text-muted);">Mute / Unmute</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">M</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
-                    <span style="color:var(--text-muted);">Quick Export</span> <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">E</kbd>
+                    <span style="color:var(--text-muted);">Quick Export</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">E</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
-                    <span style="color:var(--text-muted);">Search</span> <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">F</kbd>
+                    <span style="color:var(--text-muted);">Search</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">F</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
-                    <span style="color:var(--text-muted);">Hot Fix</span> <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">H</kbd>
+                    <span style="color:var(--text-muted);">Hot Fix</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">H</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
-                    <span style="color:var(--text-muted);">Default View</span> <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">D</kbd>
+                    <span style="color:var(--text-muted);">Default View</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">D</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
-                    <span style="color:var(--text-muted);">Compact View</span> <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">C</kbd>
+                    <span style="color:var(--text-muted);">Compact View</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">C</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
-                    <span style="color:var(--text-muted);">Prev / Next Line</span> <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">↑ / ↓</kbd>
+                    <span style="color:var(--text-muted);">Prev / Next Line</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">↑ / ↓</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
-                    <span style="color:var(--text-muted);">Seek +/- 2s</span> <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">← / →</kbd>
+                    <span style="color:var(--text-muted);">Seek +/- 2s</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">← / →</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
-                    <span style="color:var(--text-muted);">Volume +/-</span> <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">Ctrl + ↑ / ↓</kbd>
+                    <span style="color:var(--text-muted);">Volume +/-</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">Ctrl + ↑ / ↓</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
-                    <span style="color:var(--text-muted);">Shift Time -100ms</span> <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">[</kbd>
+                    <span style="color:var(--text-muted);">Shift Time -100ms</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">[</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
-                    <span style="color:var(--text-muted);">Shift Time +100ms</span> <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">]</kbd>
+                    <span style="color:var(--text-muted);">Shift Time +100ms</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">]</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
-                    <span style="color:var(--text-muted);">Undo</span> <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">Ctrl + Z</kbd>
+                    <span style="color:var(--text-muted);">Undo</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">Ctrl + Z</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
-                    <span style="color:var(--text-muted);">Redo</span> <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">Ctrl + Y</kbd>
+                    <span style="color:var(--text-muted);">Redo</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">Ctrl + Y</kbd>
                 </div>
             </div>
             <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:20px;">

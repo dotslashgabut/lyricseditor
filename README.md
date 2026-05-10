@@ -41,7 +41,8 @@ A professional-grade, browser-based word-level lyrics and subtitle editor. Desig
 - SRT (SubRip)
 - VTT (WebVTT)
 - TTML (Timed Text Markup Language)
-- YouTube JSON/SRV
+- YouTube XML (SRV1, SRV2, SRV3)
+- YouTube JSON3
 - LRCLIB (.lyricsfile)
 - Plain Text (.txt)
 
