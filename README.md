@@ -8,7 +8,7 @@ A professional-grade, browser-based word-level lyrics and subtitle editor. Desig
 
 </div>
 
-https://github.com/user-attachments/assets/2eed0d00-c213-4737-b9e3-c4cf02fc6884
+![LyricsEditor Screenshot](screenshot.png)
 
 ## ✨ Features
 
@@ -48,7 +48,12 @@ https://github.com/user-attachments/assets/2eed0d00-c213-4737-b9e3-c4cf02fc6884
     - **Toggle Empty Lines**: Optional automatic insertion of empty "clear screen" lines in LRC and TTML exports to match the editor's visual state.
 - **Undo/Redo**: Full history support for all editing actions, including file loading and removal (up to 50 steps).
 
-![LyricsEditor Screenshot](screenshot.png)
+| | |
+|:-:|:-:|
+| ![screenshot1](https://github.com/user-attachments/assets/7ae9d525-5c3c-4802-afb1-597af0ce1249) | ![screenshot2](https://github.com/user-attachments/assets/1ac77c60-175b-404c-9698-8a71ed7d1aae) |
+| ![screenshot3](https://github.com/user-attachments/assets/d91f445b-a18e-4749-be22-81aaf0758550) | ![screenshot4](https://github.com/user-attachments/assets/fe32827a-6f2c-423c-b252-c4703f0537d9) |
+
+https://github.com/user-attachments/assets/2eed0d00-c213-4737-b9e3-c4cf02fc6884
 
 ## 📥 Supported Formats
 
