@@ -413,29 +413,68 @@ function parseSRV23(content) {
   const xml = parser.parseFromString(content, "text/xml");
   const ps = xml.getElementsByTagName('p');
   const cues = [];
+  let wid = 1;
+
   for (let i = 0; i < ps.length; i++) {
     const p = ps[i];
-    const startMs = Math.round(parseFloat(p.getAttribute('t')) || 0);
-    const durMs = Math.round(parseFloat(p.getAttribute('d')) || 0);
-    const words = [];
-    const ss = p.getElementsByTagName('s'); // Word tags in SRV3
-    let text = p.textContent.trim();
-    if (ss.length > 0) {
-      let offset = 0;
-      for (let j = 0; j < ss.length; j++) {
-        const s = ss[j];
-        const tOffset = Math.round(parseFloat(s.getAttribute('t')) || 0);
-        words.push({
-          id: j + 1,
-          text: s.textContent.trim(),
-          startMs: startMs + tOffset,
-          endMs: 0 // will fix below
-        });
+    const tAttr = p.getAttribute('t');
+    const dAttr = p.getAttribute('d');
+    const append = p.getAttribute('append') === '1';
+    
+    const startMs = tAttr ? Math.round(parseFloat(tAttr)) : 0;
+    const durMs = dAttr ? Math.round(parseFloat(dAttr)) : 0;
+    const endMs = startMs + durMs;
+    const pText = p.textContent;
+
+    if (append && cues.length > 0) {
+      const last = cues[cues.length - 1];
+      last.endMs = Math.max(last.endMs, endMs);
+      last.text += pText;
+      
+      if (!last.words) {
+        // Convert previous plain text to a word if it wasn't already
+        last.words = [{ id: wid++, text: last.text.replace(pText, '').trim(), startMs: last.startMs, endMs: startMs }];
       }
-      for (let j = 0; j < words.length - 1; j++) words[j].endMs = words[j+1].startMs;
-      if (words.length) words[words.length-1].endMs = startMs + durMs;
+      
+      last.words.push({
+        id: wid++,
+        text: pText.trim(),
+        startMs: startMs,
+        endMs: endMs
+      });
+      
+      // Clean up the main text after merging
+      last.text = last.words.map(w => w.text).join(' ');
+    } else {
+      const words = [];
+      const ss = p.getElementsByTagName('s'); // Word tags in some SRV3
+      if (ss.length > 0) {
+        for (let j = 0; j < ss.length; j++) {
+          const s = ss[j];
+          const tOffset = Math.round(parseFloat(s.getAttribute('t')) || 0);
+          words.push({
+            id: wid++,
+            text: s.textContent.trim(),
+            startMs: startMs + tOffset,
+            endMs: 0
+          });
+        }
+        for (let j = 0; j < words.length - 1; j++) words[j].endMs = words[j+1].startMs;
+        if (words.length) words[words.length-1].endMs = endMs;
+      } else {
+        // Standard P tag, treat as one word for karaoke consistency if needed
+        // but we'll only add it as a word if it's potentially part of a future append
+        words.push({ id: wid++, text: pText.trim(), startMs, endMs });
+      }
+      
+      cues.push({ 
+        id: cues.length + 1, 
+        startMs, 
+        endMs, 
+        text: pText.trim(), 
+        words: words.length ? words : null 
+      });
     }
-    cues.push({ id: i + 1, startMs, endMs: startMs + durMs, text, words: words.length ? words : null });
   }
   return cues;
 }
@@ -546,10 +585,13 @@ function escapeXML(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function stringifyTTML(cues, karaoke) {
+function stringifyTTML(cues, karaoke, durationMs) {
   let head = `  <head>\n    <metadata>\n      <ttm:title>Lyrics</ttm:title>\n    </metadata>\n    <styling>\n      <style xml:id="s1" tts:textAlign="center" tts:fontFamily="Arial" tts:fontSize="100%"/>\n    </styling>\n    <layout>\n      <region xml:id="bottom" tts:displayAlign="after" tts:extent="80% 40%" tts:origin="10% 50%"/>\n    </layout>\n  </head>`;
-  const body = cues.map(cue => {
-    let content = escapeXML(cue.text).replace(/\n/g, '<br/>');
+  let bodyLines = [];
+  
+  for (let i = 0; i < cues.length; i++) {
+    const cue = cues[i];
+    let content = (cue.text || "").replace(/\n/g, '<br/>');
     if (karaoke && cue.words && cue.words.length > 0) {
       const spans = cue.words.map((w, i, arr) => {
         let wStart = w.startMs !== undefined ? w.startMs : cue.startMs;
@@ -558,9 +600,19 @@ function stringifyTTML(cues, karaoke) {
         return `        <span begin="${msToVtt(wStart)}" end="${msToVtt(wEnd)}">${escapeXML(w.text)}</span>`;
       });
       content = '\n' + spans.join('\n') + '\n      ';
+    } else {
+      content = escapeXML(content);
     }
-    return `      <p begin="${msToVtt(cue.startMs)}" end="${msToVtt(cue.endMs)}" region="bottom" style="s1">${content}</p>`;
-  }).join('\n');
+    bodyLines.push(`      <p begin="${msToVtt(cue.startMs)}" end="${msToVtt(cue.endMs)}" region="bottom" style="s1">${content}</p>`);
+    
+    // Gap filling (blank line support)
+    const nextStart = (i < cues.length - 1) ? cues[i + 1].startMs : durationMs;
+    if (nextStart && cue.endMs < nextStart - 10) {
+      bodyLines.push(`      <p begin="${msToVtt(cue.endMs)}" end="${msToVtt(nextStart)}" region="bottom" style="s1"></p>`);
+    }
+  }
+
+  const body = bodyLines.join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:tts="http://www.w3.org/ns/ttml#styling" xmlns:ttp="http://www.w3.org/ns/ttml#parameter" ttp:timeBase="media" lang="en">\n${head}\n  <body>\n    <div>\n${body}\n    </div>\n  </body>\n</tt>`;
 }
 
@@ -696,15 +748,15 @@ function stringifyLRC(cues, enhanced, durationMs) {
 }
 
 function stringifySRT(cues) {
-  return cues.filter(c => c.text.trim()).map((c, i) => {
-    return `${i + 1}\n${msToSrt(c.startMs)} --> ${msToSrt(c.endMs)}\n${c.text}\n`;
+  return cues.map((c, i) => {
+    return `${i + 1}\n${msToSrt(c.startMs)} --> ${msToSrt(c.endMs)}\n${c.text || ""}\n`;
   }).join('\n') + '\n'; // Ensure trailing newline
 }
 
 function stringifyVTT(cues, karaoke) {
   let header = 'WEBVTT\n\n';
-  return header + cues.filter(c => c.text.trim() || (karaoke && c.words && c.words.length)).map(c => {
-    let text = c.text;
+  return header + cues.map(c => {
+    let text = c.text || "";
     if (karaoke && c.words && c.words.length > 0) {
        text = c.words.map(w => `<${msToVtt(w.startMs)}>${w.text}`).join(' ');
     }
@@ -733,8 +785,8 @@ function exportAs(cues, format, durationMs) {
     case 'srt': return stringifySRT(exportCues);
     case 'vtt': return stringifyVTT(exportCues, false);
     case 'vtt_karaoke': return stringifyVTT(exportCues, true);
-    case 'ttml': return stringifyTTML(exportCues, false);
-    case 'ttml_karaoke': return stringifyTTML(exportCues, true);
+    case 'ttml': return stringifyTTML(exportCues, false, durationMs);
+    case 'ttml_karaoke': return stringifyTTML(exportCues, true, durationMs);
     case 'srv1': return stringifySRV1(exportCues);
     case 'srv2': return stringifySRV2(exportCues);
     case 'srv3': return stringifySRV3(exportCues);

@@ -43,7 +43,7 @@ function renderTimeline() {
     tr.innerHTML=`<div class="track-controls"><input type="checkbox" class="line-checkbox" data-id="${line.id}" style="cursor:pointer; margin-right:4px;" title="Select this line"><span style="color:var(--text-muted);font-size:11px;width:14px">${idx+1}</span><button class="track-play-btn" data-start="${line.startMs}" data-end="${line.endMs}"><i class="fas fa-play" style="font-size:9px;margin-left:1px"></i></button><div class="track-info">${fmt(line.startMs/1000)}</div></div><div class="track-content" id="trk-${line.id}"><div class="playback-indicator" id="pi-${line.id}"></div></div><div class="track-end-time">${fmt(line.endMs/1000)}</div><button class="icon-btn track-edit-btn" title="Edit Line Text"><i class="fas fa-edit"></i></button><button class="icon-btn track-delete-btn" title="Delete Line"><i class="fas fa-trash"></i></button>`;
     container.appendChild(tr);
     const tc = tr.querySelector('.track-content');
-    const ws = (line.words && line.words.length > 0) ? line.words : [{ id: `pl-${line.id}`, text: line.text || "[Empty]", startMs: line.startMs, endMs: line.endMs, isPl: true }];
+    const ws = (line.words && line.words.length > 0) ? line.words : [{ id: `pl-${line.id}`, text: (line.text || "").trim() || "[Empty]", startMs: line.startMs, endMs: line.endMs, isPl: true }];
     ws.forEach(w => {
       const el = document.createElement('div'); el.className='word-block'; el.id=`w-${w.id}`;
       if(w.isPl) el.style.opacity = '0.7';
@@ -155,14 +155,14 @@ function bindDrag(el, word, line, tc, isPl = false) {
     const nextLine = lineIdx < lines.length - 1 ? lines[lineIdx + 1] : null;
 
     if(mode==='drag'){
-      let mxR=next?(snap.ne-snap.ns-MIN):(nextLine ? nextLine.startMs - snap.e : 9999999);
+      let mxR=next?(snap.ne-snap.ns-MIN):(nextLine ? nextLine.startMs - snap.e : (duration > 0 ? duration - snap.e : 9999999));
       let mxL=prev?-(snap.pe-snap.ps-MIN):-(snap.s-(prevLine ? prevLine.endMs : 0));
       dt=Math.max(mxL,Math.min(mxR,dt));
       word.startMs=snap.s+dt; word.endMs=snap.e+dt;
       if(prev){prev.endMs=snap.pe+dt;}
       if(next){next.startMs=snap.ns+dt;}
     } else if(mode==='rr'){
-      let mxR=next?(snap.ne-snap.ns-MIN):(nextLine ? nextLine.startMs - snap.e : 9999999);
+      let mxR=next?(snap.ne-snap.ns-MIN):(nextLine ? nextLine.startMs - snap.e : (duration > 0 ? duration - snap.e : 9999999));
       let mxL=-(snap.e-snap.s-MIN);
       dt=Math.max(mxL,Math.min(mxR,dt));
       word.endMs=snap.e+dt;
@@ -456,7 +456,7 @@ $('tool-sort-rows').onclick=()=>{lines.sort((a,b)=>a.startMs-b.startMs);pushHist
 $('tool-remove-empty-lines').onclick=()=>{lines=lines.filter(l=>(l.words&&l.words.length>0)||l.text.trim());pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
 
 $('tool-remove-overlaps').onclick=()=>{for(let i=0;i<lines.length-1;i++){if(lines[i].endMs>lines[i+1].startMs){lines[i].endMs=lines[i+1].startMs;if(lines[i].words&&lines[i].words.length)lines[i].words[lines[i].words.length-1].endMs=Math.min(lines[i].words[lines[i].words.length-1].endMs,lines[i+1].startMs);}}pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
-$('tool-merge-lines').onclick=()=>{const checks=Array.from(document.querySelectorAll('.line-checkbox:checked')).map(c=>parseInt(c.dataset.id));if(checks.length>1){const selected=lines.filter(l=>checks.includes(l.id));const first=selected[0],last=selected[selected.length-1];first.endMs=last.endMs;first.text=selected.map(l=>l.text).join(' ');first.words=selected.flatMap(l=>l.words||[]);lines=lines.filter(l=>l.id===first.id||!checks.includes(l.id));pushHistory();renderTimeline();}$('tools-menu').classList.remove('open');};
+$('tool-merge-lines').onclick=()=>{const checks=Array.from(document.querySelectorAll('.line-checkbox:checked')).map(c=>parseInt(c.dataset.id));if(checks.length>1){const selected=lines.filter(l=>checks.includes(l.id));const first=selected[0],last=selected[selected.length-1];first.endMs=last.endMs;first.text=selected.map(l=>(l.text||"").trim()).filter(t=>t).join(' ');first.words=selected.flatMap(l=>l.words||[]);lines=lines.filter(l=>l.id===first.id||!checks.includes(l.id));pushHistory();renderTimeline();}$('tools-menu').classList.remove('open');};
 
 let linesToSplit = [];
 $('tool-split-lines').onclick=()=>{
