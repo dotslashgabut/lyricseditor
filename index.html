@@ -53,12 +53,22 @@
                     <div class="dropdown-item" id="tool-find-replace"><i class="fas fa-exchange-alt"></i> Find & Replace</div>
                     <div class="dropdown-item" id="tool-sort-rows"><i class="fas fa-sort-numeric-down"></i> Sort Rows by Time</div>
                     <div class="dropdown-item" id="tool-remove-empty-lines"><i class="fas fa-trash-alt"></i> Remove Empty Lines</div>
+                    <div class="dropdown-item" id="tool-remove-overlaps"><i class="fas fa-compress-arrows-alt"></i> Remove Overlaps</div>
+                    <div class="dropdown-item" id="tool-merge-lines"><i class="fas fa-object-group"></i> Merge Selected Lines</div>
+                    <div class="dropdown-item" id="tool-split-lines"><i class="fas fa-cut"></i> Split Selected Lines</div>
+                    <div class="dropdown-item" id="tool-sync-line-words"><i class="fas fa-expand-arrows-alt"></i> Sync Line to Words</div>
+                    <div class="dropdown-divider"></div>
+                    <div class="dropdown-section-title">Text Formatting</div>
+                    <div class="dropdown-item" id="tool-format-text"><i class="fas fa-font"></i> Change Case / Format...</div>
+                    <div class="dropdown-item" id="tool-remove-punct"><i class="fas fa-eraser"></i> Remove Punctuation</div>
                     <div class="dropdown-divider"></div>
                     <div class="dropdown-section-title">Word Tools</div>
                     <div class="dropdown-item" id="tool-auto-karaoke"><i class="fas fa-wand-magic-sparkles"></i> Auto-Generate Word Timings</div>
                     <div class="dropdown-item" id="tool-fill-gaps"><i class="fas fa-arrows-alt-h"></i> Fill Gaps Between Words</div>
                     <div class="dropdown-item" id="tool-remove-empty"><i class="fas fa-eraser"></i> Remove Empty Words</div>
                     <div class="dropdown-item" id="tool-compact-ws"><i class="fas fa-text-width"></i> Compact Whitespace</div>
+                    <div class="dropdown-item" id="tool-clear-words"><i class="fas fa-ban"></i> Clear All Word Timings</div>
+                    <div class="dropdown-item" id="tool-distribute-words"><i class="fas fa-align-justify"></i> Distribute Words Evenly</div>
                 </div>
             </div>
 
@@ -194,6 +204,49 @@
             <div style="display:flex; gap:8px; justify-content:flex-end;">
                 <button class="btn" id="fr-cancel">Cancel</button>
                 <button class="btn btn-primary" id="fr-apply">Replace All</button>
+            </div>
+        </div>
+    </div>
+    <!-- Split Line Modal -->
+    <div class="modal-overlay" id="split-line-modal" style="display:none">
+        <div class="modal-box" style="min-width: 380px;">
+            <h3>Split Line</h3>
+            <p style="color:var(--text-muted); font-size:13px; margin-bottom:16px;">How would you like to split the selected line(s)?</p>
+            <div style="margin-bottom: 12px;">
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                    <input type="radio" name="split-method" value="auto" checked>
+                    <span>Auto-split at largest time gap</span>
+                </label>
+            </div>
+            <div style="margin-bottom: 20px; opacity:0.5;" id="split-word-container">
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                    <input type="radio" name="split-method" value="word" id="split-method-word">
+                    <span>Split after word number:</span>
+                </label>
+                <div style="margin-left: 28px; margin-top: 6px; display:flex; align-items:center;">
+                    <input type="number" id="split-word-index" value="1" min="1" disabled style="width:60px; padding:6px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:4px;">
+                    <span id="split-word-preview" style="font-size:11px; color:var(--accent); margin-left:12px;"></span>
+                </div>
+            </div>
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+                <button class="btn" id="split-cancel">Cancel</button>
+                <button class="btn btn-primary" id="split-apply">Split Line</button>
+            </div>
+        </div>
+    </div>
+    <!-- Format Text Modal -->
+    <div class="modal-overlay" id="format-text-modal" style="display:none">
+        <div class="modal-box" style="min-width: 350px;">
+            <h3>Format Text</h3>
+            <p style="color:var(--text-muted); font-size:13px; margin-bottom:16px;">Apply formatting to selected lines (or all if none selected).</p>
+            <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;">
+                <button class="btn" id="format-title-case">Title Case</button>
+                <button class="btn" id="format-sentence-case">Sentence case</button>
+                <button class="btn" id="format-uppercase">UPPERCASE</button>
+                <button class="btn" id="format-lowercase">lowercase</button>
+            </div>
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+                <button class="btn" id="format-cancel">Close</button>
             </div>
         </div>
     </div>

@@ -19,14 +19,17 @@ A professional-grade, browser-based word-level lyrics and subtitle editor. Desig
     - Drag edges to resize or drag the center to move words.
     - Automatic gap filling and overlapping prevention.
 - **Smart Tools**:
-    - **Shift Time**: Offset all or selected timestamps (forward/backward).
-    - **Find & Replace**: Bulk edit text across lines.
-    - **Auto-Karaoke**: Automatically distribute word timings for a line.
+    - **Global Tools**: Shift Time, Find & Replace, Remove Overlaps, Merge/Split Selected Lines, Sync Line to Words, Sort by Time.
+    - **Word Tools**: Auto-Generate Word Timings, Fill Gaps, Remove Empty Words, Compact Whitespace, Clear Word Timings, Distribute Words Evenly.
+    - **Text Formatting**: Change Case (Title, Sentence, Upper, Lower), Remove Punctuation.
     - **Hot Fix**: One-click cleanup (compact whitespace, remove empty words, fill gaps).
-- **Playback Controls**:
-    - High-precision audio playback.
-    - Line repeat mode for focused editing.
-    - Progress bar seeking and volume control.
+- **Visual Feedback**:
+    - **Word-Block Highlighting**: Words illuminate in real-time as the playback cursor passes over them, ensuring perfect synchronization.
+    - **Toggle Control**: Easily enable or disable the highlighting feature using the toggle button in the toolbar.
+- **Playback & Editing**:
+    - High-precision audio playback with granular seeking.
+    - Line repeat mode for focused timing adjustments on a single line.
+    - Progress bar seeking and volume control (with shortcut support).
 - **Professional UI**:
     - Dark mode by default with a premium aesthetic.
     - Responsive layout (works on tablets and desktops).
@@ -61,18 +64,25 @@ A professional-grade, browser-based word-level lyrics and subtitle editor. Desig
 | `S` | Stop |
 | `R` | Toggle Repeat (Loop current line) |
 | `M` | Mute / Unmute |
-| `E` | Quick Export (uses the same format as imported) |
+| `E` | Quick Export (uses same format as imported) |
 | `F` | Focus Search Box |
+| `G` | Find & Replace |
+| `T` | Shift Time... |
+| `K` | Keyboard Shortcuts Info |
+| `L` | Toggle Fullscreen |
+| `Esc` | Close Modal / Blur Search |
 | `H` | Hot Fix (Cleanup lyrics) |
 | `D` | Default View Mode |
 | `C` | Compact View Mode |
 | `Up` / `Down` | Jump to Previous / Next Line |
 | `Left` / `Right` | Seek Backward / Forward (2 seconds) |
-| `Ctrl + Up` / `Down` | Volume Up / Down |
-| `Ctrl + Z` | Undo |
-| `Ctrl + Shift + Z` / `Ctrl + Y` | Redo |
-| `[` / `{` | Global Shift Backward (-100ms) |
-| `]` / `}` | Global Shift Forward (+100ms) |
+| `Ctrl/Cmd + Up` / `Down` | Volume Up / Down |
+| `Ctrl/Cmd + Z` | Undo |
+| `Ctrl/Cmd + Shift + Z` / `Y` | Redo |
+| `[` / `{` | Shift Time -100ms |
+| `]` / `}` | Shift Time +100ms |
+| `Ctrl/Cmd + [` | Shift Time -500ms |
+| `Ctrl/Cmd + ]` | Shift Time +500ms |
 
 ---
 

@@ -454,6 +454,100 @@ $('tool-shift-time').onclick=()=>{$('tools-menu').classList.remove('open');$('sh
 $('tool-find-replace').onclick=()=>{$('tools-menu').classList.remove('open');$('find-replace-modal').style.display='flex';};
 $('tool-sort-rows').onclick=()=>{lines.sort((a,b)=>a.startMs-b.startMs);pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
 $('tool-remove-empty-lines').onclick=()=>{lines=lines.filter(l=>(l.words&&l.words.length>0)||l.text.trim());pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
+
+$('tool-remove-overlaps').onclick=()=>{for(let i=0;i<lines.length-1;i++){if(lines[i].endMs>lines[i+1].startMs){lines[i].endMs=lines[i+1].startMs;if(lines[i].words&&lines[i].words.length)lines[i].words[lines[i].words.length-1].endMs=Math.min(lines[i].words[lines[i].words.length-1].endMs,lines[i+1].startMs);}}pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
+$('tool-merge-lines').onclick=()=>{const checks=Array.from(document.querySelectorAll('.line-checkbox:checked')).map(c=>parseInt(c.dataset.id));if(checks.length>1){const selected=lines.filter(l=>checks.includes(l.id));const first=selected[0],last=selected[selected.length-1];first.endMs=last.endMs;first.text=selected.map(l=>l.text).join(' ');first.words=selected.flatMap(l=>l.words||[]);lines=lines.filter(l=>l.id===first.id||!checks.includes(l.id));pushHistory();renderTimeline();}$('tools-menu').classList.remove('open');};
+
+let linesToSplit = [];
+$('tool-split-lines').onclick=()=>{
+  $('tools-menu').classList.remove('open');
+  const checks=Array.from(document.querySelectorAll('.line-checkbox:checked')).map(c=>parseInt(c.dataset.id));
+  if(checks.length === 0) return alert("Please select at least one line to split.");
+  linesToSplit = lines.filter(l=>checks.includes(l.id));
+  
+  if (linesToSplit.length === 1) {
+    const l = linesToSplit[0];
+    const maxW = (l.words && l.words.length > 0) ? l.words.length - 1 : (l.text.trim().split(/\s+/).length - 1);
+    if(maxW < 1) return alert("Line only has 1 word. Cannot split.");
+    $('split-word-container').style.opacity = '1';
+    $('split-method-word').disabled = false;
+    $('split-word-index').max = maxW;
+    $('split-word-index').value = Math.max(1, Math.floor((maxW+1)/2));
+    updateSplitPreview();
+  } else {
+    $('split-method-word').disabled = true;
+    $('split-word-container').style.opacity = '0.5';
+    document.querySelector('input[name="split-method"][value="auto"]').checked = true;
+    $('split-word-index').disabled = true;
+    $('split-word-preview').textContent = "Auto only for multiple lines";
+  }
+  $('split-line-modal').style.display='flex';
+};
+
+$('split-cancel').onclick = () => $('split-line-modal').style.display='none';
+function updateSplitPreview() {
+    if (linesToSplit.length !== 1) return;
+    const idx = parseInt($('split-word-index').value);
+    const l = linesToSplit[0];
+    const ws = (l.words && l.words.length > 0) ? l.words.map(w=>w.text) : l.text.trim().split(/\s+/);
+    if(idx > 0 && idx < ws.length) $('split-word-preview').textContent = `... ${ws[idx-1]} | ${ws[idx]} ...`;
+    else $('split-word-preview').textContent = "";
+}
+$('split-word-index').oninput = updateSplitPreview;
+document.querySelectorAll('input[name="split-method"]').forEach(r => {
+    r.onchange = () => {
+        if(r.value === 'word') { $('split-word-index').disabled = false; updateSplitPreview(); }
+        else { $('split-word-index').disabled = true; $('split-word-preview').textContent = ""; }
+    };
+});
+
+$('split-apply').onclick=()=>{
+  const method = document.querySelector('input[name="split-method"]:checked').value;
+  const splitWordIdx = parseInt($('split-word-index').value);
+  const newLines=[];
+  let maxId=lines.reduce((m,l)=>Math.max(m,l.id),0);
+  const checks = linesToSplit.map(l=>l.id);
+  
+  lines.forEach(l=>{
+    if(checks.includes(l.id)){
+      let splitIdx=0;
+      if (method === 'word' && linesToSplit.length === 1) splitIdx = splitWordIdx;
+      else {
+          if(l.words&&l.words.length>1){
+              let maxGap=-1;for(let i=0;i<l.words.length-1;i++){let gap=l.words[i+1].startMs-l.words[i].endMs;if(gap>maxGap){maxGap=gap;splitIdx=i+1;}}
+          }else{
+              const ws=l.text.trim().split(/\s+/);if(ws.length>1)splitIdx=Math.floor(ws.length/2);
+          }
+      }
+      if(splitIdx>0 && splitIdx < ((l.words && l.words.length > 0) ? l.words.length : l.text.trim().split(/\s+/).length)){
+          let words1=(l.words && l.words.length > 0)?l.words.slice(0,splitIdx):[];
+          let words2=(l.words && l.words.length > 0)?l.words.slice(splitIdx):[];
+          let text1=(l.words && l.words.length > 0)?words1.map(w=>w.text).join(' '):l.text.trim().split(/\s+/).slice(0,splitIdx).join(' ');
+          let text2=(l.words && l.words.length > 0)?words2.map(w=>w.text).join(' '):l.text.trim().split(/\s+/).slice(splitIdx).join(' ');
+          let end1=words1.length?words1[words1.length-1].endMs:l.startMs+(l.endMs-l.startMs)/2;
+          let start2=words2.length?words2[0].startMs:end1;
+          newLines.push({id:l.id,startMs:l.startMs,endMs:end1,text:text1,words:words1});
+          maxId++;
+          newLines.push({id:maxId,startMs:start2,endMs:l.endMs,text:text2,words:words2});
+      }else newLines.push(l);
+    }else newLines.push(l);
+  });
+  lines=newLines;
+  pushHistory();renderTimeline();
+  $('split-line-modal').style.display='none';
+};
+
+$('tool-sync-line-words').onclick=()=>{lines.forEach(l=>{if(l.words&&l.words.length){l.startMs=l.words[0].startMs;l.endMs=l.words[l.words.length-1].endMs;}});pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
+
+$('tool-format-text').onclick=()=>{$('tools-menu').classList.remove('open');$('format-text-modal').style.display='flex';};
+$('format-cancel').onclick=()=>$('format-text-modal').style.display='none';
+const applyFormat=(type)=>{const checks=document.querySelectorAll('.line-checkbox:checked');const sIds=Array.from(checks).map(c=>parseInt(c.dataset.id));const tgts=sIds.length?lines.filter(l=>sIds.includes(l.id)):lines;tgts.forEach(l=>{if(type==='upper')l.text=l.text.toUpperCase();else if(type==='lower')l.text=l.text.toLowerCase();else if(type==='title')l.text=l.text.split(' ').map(w=>w?w[0].toUpperCase()+w.slice(1).toLowerCase():'').join(' ');else if(type==='sentence')l.text=l.text?l.text[0].toUpperCase()+l.text.slice(1).toLowerCase():'';if(l.words&&l.words.length===l.text.split(' ').length){const ws=l.text.split(' ');l.words.forEach((w,i)=>w.text=ws[i]);}});pushHistory();renderTimeline();$('format-text-modal').style.display='none';};
+$('format-title-case').onclick=()=>applyFormat('title');$('format-sentence-case').onclick=()=>applyFormat('sentence');$('format-uppercase').onclick=()=>applyFormat('upper');$('format-lowercase').onclick=()=>applyFormat('lower');
+
+$('tool-remove-punct').onclick=()=>{lines.forEach(l=>{l.text=l.text.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()♪]/g,"");if(l.words)l.words.forEach(w=>w.text=w.text.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()♪]/g,""));});pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
+$('tool-clear-words').onclick=()=>{lines.forEach(l=>l.words=[]);pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
+$('tool-distribute-words').onclick=()=>{const checks=document.querySelectorAll('.line-checkbox:checked');const sIds=Array.from(checks).map(c=>parseInt(c.dataset.id));const tgts=sIds.length?lines.filter(l=>sIds.includes(l.id)):lines;tgts.forEach(l=>{if(l.words&&l.words.length){const p=(l.endMs-l.startMs)/l.words.length;l.words.forEach((w,i)=>{w.startMs=Math.round(l.startMs+p*i);w.endMs=Math.round(l.startMs+p*(i+1));});}});pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
+
 $('tool-auto-karaoke').onclick=()=>{autoFillWords(lines);let wid=1;lines.forEach(l=>{if(l.words)l.words.forEach(w=>w.id=wid++);});pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
 $('tool-fill-gaps').onclick=()=>{
   lines.forEach(c=>{if(c.words&&c.words.length){c.words[0].startMs=c.startMs;for(let i=0;i<c.words.length-1;i++)c.words[i].endMs=c.words[i+1].startMs;c.words[c.words.length-1].endMs=c.endMs;}});
@@ -573,9 +667,11 @@ $('btn-next-line').onclick=()=>{if(!lines.length)return;const next=lines.find(l=
 window.addEventListener('keydown',e=>{
   if(e.key === 'Escape'){
     $('shift-modal').style.display = 'none';
+    $('split-line-modal').style.display = 'none';
     $('find-replace-modal').style.display = 'none';
     $('shortcuts-modal').style.display = 'none';
     $('edit-text-modal').style.display = 'none';
+    $('format-text-modal').style.display = 'none';
     if(document.activeElement === $('search-input')){
       $('search-input').blur();
     }
