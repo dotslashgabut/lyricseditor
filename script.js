@@ -474,32 +474,34 @@ $('progress-bar').onclick=e=>{if(!duration)return;const r=$('progress-bar').getB
 
 // ── File Loading ──
 $('btn-load-audio').onclick=()=>$('input-audio').click();
-function handleAudioFile(f) {
+function handleAudioFile(f, isRestore = false) {
   if(f){
     lastAudioFile = f;
-    saveFileToDB('lastAudio', f); // Persist to DB
+    if (!isRestore) saveFileToDB('lastAudio', f);
     stopPlay();
-    audioFilename = f.name.replace(/\.[^/.]+$/, "");
-    originalFilename = audioFilename;
     
-    // Revoke old URL if it exists to free memory
+    if (!isRestore) {
+        audioFilename = f.name.replace(/\.[^/.]+$/, "");
+        originalFilename = audioFilename;
+        audioFullname = f.name;
+    }
+    
+    // Revoke old URL if it exists
     if(audio.src) URL.revokeObjectURL(audio.src);
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      // Create a fresh Blob from the array buffer - this often fixes demuxer issues
+      // Create a fresh Blob from the array buffer - this fixes demuxer and sound issues
       const blob = new Blob([event.target.result], { type: f.type || 'audio/mpeg' });
       const url = URL.createObjectURL(blob);
       audio.src = url;
-      audio.load(); // Explicitly trigger demuxer
+      audio.load(); 
+      updateFileUI();
     };
     reader.onerror = () => console.error("Error reading audio file");
     reader.readAsArrayBuffer(f);
     
-    // Update display
-    audioFullname = f.name;
-    updateFileUI();
-    pushHistory();
+    if (!isRestore) pushHistory();
   }
 }
 $('input-audio').onchange=e=>{
@@ -1013,18 +1015,14 @@ document.addEventListener('fullscreenchange', () => {
     renderTimeline();
     updateDisplay();
 
-    // Load large binary files in the background to prevent UI lag
+    // Load large binary files in the background
     getFileFromDB('lastLyrics').then(file => {
-        if (file) {
-            lastLyricsFile = file;
-            updateFileUI();
-        }
+        if (file) lastLyricsFile = file;
     });
 
     getFileFromDB('lastAudio').then(file => {
         if (file) {
-            lastAudioFile = file;
-            updateFileUI();
+            handleAudioFile(file, true); // Restore without resetting session
         }
     });
 })();
