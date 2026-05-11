@@ -547,7 +547,7 @@ function escapeXML(str) {
 }
 
 function stringifyTTML(cues, karaoke) {
-  let head = `  <head>\n    <metadata>\n    </metadata>\n  </head>`;
+  let head = `  <head>\n    <metadata>\n      <ttm:title>Lyrics</ttm:title>\n    </metadata>\n    <styling>\n      <style xml:id="s1" tts:textAlign="center" tts:fontFamily="Arial" tts:fontSize="100%"/>\n    </styling>\n    <layout>\n      <region xml:id="bottom" tts:displayAlign="after" tts:extent="80% 40%" tts:origin="10% 50%"/>\n    </layout>\n  </head>`;
   const body = cues.map(cue => {
     let content = escapeXML(cue.text).replace(/\n/g, '<br/>');
     if (karaoke && cue.words && cue.words.length > 0) {
@@ -555,19 +555,20 @@ function stringifyTTML(cues, karaoke) {
         let wStart = w.startMs !== undefined ? w.startMs : cue.startMs;
         let wEnd = w.endMs !== undefined ? w.endMs : (wStart + 300);
         if (i < arr.length - 1 && arr[i+1].startMs) wEnd = Math.min(wEnd, arr[i+1].startMs);
-        return `<span begin="${msToVtt(wStart)}" end="${msToVtt(wEnd)}">${escapeXML(w.text)}</span>`;
+        return `        <span begin="${msToVtt(wStart)}" end="${msToVtt(wEnd)}">${escapeXML(w.text)}</span>`;
       });
-      content = '\n' + spans.map(s => `        ${s}`).join('\n') + '\n      ';
+      content = '\n' + spans.join('\n') + '\n      ';
     }
-    return `      <p begin="${msToVtt(cue.startMs)}" end="${msToVtt(cue.endMs)}">${content}</p>`;
+    return `      <p begin="${msToVtt(cue.startMs)}" end="${msToVtt(cue.endMs)}" region="bottom" style="s1">${content}</p>`;
   }).join('\n');
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" lang="en">\n${head}\n  <body>\n    <div>\n${body}\n    </div>\n  </body>\n</tt>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:tts="http://www.w3.org/ns/ttml#styling" xmlns:ttp="http://www.w3.org/ns/ttml#parameter" ttp:timeBase="media" lang="en">\n${head}\n  <body>\n    <div>\n${body}\n    </div>\n  </body>\n</tt>`;
 }
 
 function stringifySRV1(cues) {
   let xml = `<?xml version="1.0" encoding="utf-8" ?>\n<transcript>\n`;
   for(const cue of cues) {
-    xml += `  <text start="${(cue.startMs/1000).toFixed(3)}" dur="${((cue.endMs-cue.startMs)/1000).toFixed(3)}">${escapeXML(cue.text)}</text>\n`;
+    const text = escapeXML(cue.text).replace(/\n/g, '&#10;');
+    xml += `  <text start="${(cue.startMs/1000).toFixed(3)}" dur="${((cue.endMs-cue.startMs)/1000).toFixed(3)}">${text}</text>\n`;
   }
   return xml + `</transcript>`;
 }
@@ -575,13 +576,14 @@ function stringifySRV1(cues) {
 function stringifySRV2(cues) {
   let xml = `<?xml version="1.0" encoding="utf-8" ?>\n<timedtext format="2">\n  <body>\n`;
   for(const cue of cues) {
-    xml += `    <p t="${cue.startMs}" d="${cue.endMs-cue.startMs}">${escapeXML(cue.text)}</p>\n`;
+    const text = escapeXML(cue.text).replace(/\n/g, '&#10;');
+    xml += `    <p t="${cue.startMs}" d="${cue.endMs-cue.startMs}">${text}</p>\n`;
   }
   return xml + `  </body>\n</timedtext>`;
 }
 
 function stringifySRV3Karaoke(cues) {
-  let xml = `<?xml version="1.0" encoding="utf-8" ?>\n<timedtext>\n`;
+  let xml = `<?xml version="1.0" encoding="utf-8" ?>\n<timedtext format="3">\n  <body>\n`;
   for (const cue of cues) {
      if (cue.words && cue.words.length > 0) {
          for (let i = 0; i < cue.words.length; i++) {
@@ -592,17 +594,17 @@ function stringifySRV3Karaoke(cues) {
              let content = escapeXML(w.text).trim();
              
              if (i > 0) {
-                 xml += `  <text t="${startMs}" d="${durMs}" append="1"> ${content}</text>\n`;
+                 xml += `    <p t="${startMs}" d="${durMs}" append="1"> ${content}</p>\n`;
              } else {
-                 xml += `  <text t="${startMs}" d="${durMs}">${content}</text>\n`;
+                 xml += `    <p t="${startMs}" d="${durMs}">${content}</p>\n`;
              }
          }
      } else {
          const durMs = cue.endMs - cue.startMs;
-         xml += `  <text t="${cue.startMs}" d="${durMs}">${escapeXML(cue.text).trim()}</text>\n`;
+         xml += `    <p t="${cue.startMs}" d="${durMs}">${escapeXML(cue.text).trim()}</p>\n`;
      }
   }
-  xml += `</timedtext>`;
+  xml += `  </body>\n</timedtext>`;
   return xml;
 }
 
@@ -610,7 +612,7 @@ function stringifySRV3(cues) {
   let xml = `<?xml version="1.0" encoding="utf-8" ?>\n<timedtext format="3">\n  <body>\n`;
   for(const cue of cues) {
     const durMs = cue.endMs - cue.startMs;
-    let content = escapeXML(cue.text);
+    let content = '';
     
     if (cue.words && cue.words.length > 0) {
        content = cue.words.map((w, i) => {
@@ -618,6 +620,8 @@ function stringifySRV3(cues) {
            const space = i > 0 ? ' ' : '';
            return `${space}<s t="${offset}">${escapeXML(w.text.trim())}</s>`;
        }).join('');
+    } else {
+       content = escapeXML(cue.text);
     }
     
     xml += `    <p t="${cue.startMs}" d="${durMs}">${content}</p>\n`;
@@ -648,7 +652,10 @@ function stringifyTXT(cues) {
   const STANZA_BREAK_THRESHOLD = 2000;
 
   for (let i = 0; i < cues.length; i++) {
-    result += cues[i].text + '\n';
+    const text = cues[i].text.trim();
+    if (!text) continue;
+    
+    result += text + '\n';
     
     if (i < cues.length - 1) {
       const currentEnd = cues[i].endMs;
@@ -663,43 +670,66 @@ function stringifyTXT(cues) {
   return result.trim();
 }
 
-function stringifyLRC(cues, enhanced) {
-  return cues.map(c => {
-    let line = `[${msToLrc(c.startMs)}]`;
+function stringifyLRC(cues, enhanced, durationMs) {
+  let output = [];
+  if (durationMs) {
+    output.push(`[length:${msToLrc(durationMs)}]`);
+  }
+
+  for (let i = 0; i < cues.length; i++) {
+    const c = cues[i];
+    let line = `[${msToLrc(c.startMs)}] `;
     if (enhanced && c.words && c.words.length > 0) {
       line += c.words.map(w => `<${msToLrc(w.startMs)}>${w.text}`).join(' ');
     } else {
       line += c.text;
     }
-    return line;
-  }).join('\n');
+    output.push(line);
+
+    // Add a blank line to clear the screen if there's a gap to the next cue or at the end
+    const nextStart = (i < cues.length - 1) ? cues[i + 1].startMs : (durationMs || (c.endMs + 1000));
+    if (c.endMs < nextStart - 10) { // Small threshold to avoid redundant clears
+      output.push(`[${msToLrc(c.endMs)}]`);
+    }
+  }
+  return output.join('\n');
 }
 
 function stringifySRT(cues) {
-  return cues.map((c, i) => {
+  return cues.filter(c => c.text.trim()).map((c, i) => {
     return `${i + 1}\n${msToSrt(c.startMs)} --> ${msToSrt(c.endMs)}\n${c.text}\n`;
-  }).join('\n');
+  }).join('\n') + '\n'; // Ensure trailing newline
 }
 
 function stringifyVTT(cues, karaoke) {
   let header = 'WEBVTT\n\n';
-  return header + cues.map(c => {
+  return header + cues.filter(c => c.text.trim() || (karaoke && c.words && c.words.length)).map(c => {
     let text = c.text;
     if (karaoke && c.words && c.words.length > 0) {
        text = c.words.map(w => `<${msToVtt(w.startMs)}>${w.text}`).join(' ');
     }
     return `${msToVtt(c.startMs)} --> ${msToVtt(c.endMs)}\n${text}\n`;
-  }).join('\n');
+  }).join('\n') + '\n'; // Ensure trailing newline
 }
 
 // ── Exporters ──
 function exportAs(cues, format, durationMs) {
-  // Deep copy to avoid modifying original editor state
+  // Deep copy all cues
   const exportCues = JSON.parse(JSON.stringify(cues));
 
+  // Clean text: collapse all whitespace
+  exportCues.forEach(c => {
+    c.text = (c.text || "").replace(/\s+/g, ' ').trim();
+    if (c.words) {
+      c.words.forEach(w => {
+        w.text = (w.text || "").trim();
+      });
+    }
+  });
+
   switch(format) {
-    case 'lrc': return stringifyLRC(exportCues, false);
-    case 'lrc_enhanced': return stringifyLRC(exportCues, true);
+    case 'lrc': return stringifyLRC(exportCues, false, durationMs);
+    case 'lrc_enhanced': return stringifyLRC(exportCues, true, durationMs);
     case 'srt': return stringifySRT(exportCues);
     case 'vtt': return stringifyVTT(exportCues, false);
     case 'vtt_karaoke': return stringifyVTT(exportCues, true);
@@ -709,7 +739,10 @@ function exportAs(cues, format, durationMs) {
     case 'srv2': return stringifySRV2(exportCues);
     case 'srv3': return stringifySRV3(exportCues);
     case 'srv3_karaoke': return stringifySRV3Karaoke(exportCues);
-    case 'json': return JSON.stringify({ cues: exportCues.map(c => ({ start: c.startMs, end: c.endMs, text: c.text, words: c.words })) }, null, 2);
+    case 'json': return JSON.stringify({ 
+      metadata: { duration_ms: durationMs },
+      cues: exportCues.map(c => ({ startMs: c.startMs, endMs: c.endMs, text: c.text, words: c.words })) 
+    }, null, 2);
     case 'json3': return stringifyJSON3(exportCues);
     case 'lyricsfile': return stringifyLyricsFile(exportCues, durationMs);
     case 'txt': return stringifyTXT(exportCues);
