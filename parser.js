@@ -147,7 +147,7 @@ function parseLRC(content) {
     }
   });
 
-  return cues.filter(c => c.text.trim() || (c.words && c.words.length > 0));
+  return cues;
 }
 
 function parseSRT(content) {
@@ -216,7 +216,15 @@ function parseVTT(content) {
 }
 
 function parseTXT(content) {
-  return content.split(/\r?\n/).filter(l => l.trim()).map((l, i) => ({
+  // Normalize line endings and split
+  const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  
+  // Remove the very last empty line if the file ended with a newline
+  if (lines.length > 0 && lines[lines.length - 1] === '') {
+    lines.pop();
+  }
+
+  return lines.map((l, i) => ({
     id: i+1, startMs: i*2000, endMs: (i+1)*2000, text: l.trim(), words: null
   }));
 }
@@ -605,8 +613,8 @@ function stringifyTTML(cues, karaoke, durationMs) {
     }
     bodyLines.push(`      <p begin="${msToVtt(cue.startMs)}" end="${msToVtt(cue.endMs)}" region="bottom" style="s1">${content}</p>`);
     
-    // Gap filling (blank line support)
-    const nextStart = (i < cues.length - 1) ? cues[i + 1].startMs : durationMs;
+    // Gap filling (blank line support) - only between cues
+    const nextStart = (i < cues.length - 1) ? cues[i + 1].startMs : null;
     if (nextStart && cue.endMs < nextStart - 10) {
       bodyLines.push(`      <p begin="${msToVtt(cue.endMs)}" end="${msToVtt(nextStart)}" region="bottom" style="s1"></p>`);
     }
@@ -704,9 +712,7 @@ function stringifyTXT(cues) {
   const STANZA_BREAK_THRESHOLD = 2000;
 
   for (let i = 0; i < cues.length; i++) {
-    const text = cues[i].text.trim();
-    if (!text) continue;
-    
+    const text = (cues[i].text || "").trim();
     result += text + '\n';
     
     if (i < cues.length - 1) {
@@ -730,11 +736,16 @@ function stringifyLRC(cues, enhanced, durationMs) {
 
   for (let i = 0; i < cues.length; i++) {
     const c = cues[i];
-    let line = `[${msToLrc(c.startMs)}] `;
+    let line = `[${msToLrc(c.startMs)}]`;
     if (enhanced && c.words && c.words.length > 0) {
-      line += c.words.map(w => `<${msToLrc(w.startMs)}>${w.text}`).join(' ');
-    } else {
-      line += c.text;
+      const hasVisibleText = c.words.some(w => (w.text || "").trim().length > 0);
+      if (hasVisibleText) {
+        line += " " + c.words.map(w => `<${msToLrc(w.startMs)}>${w.text}`).join(' ');
+      } else if (c.text && c.text.trim()) {
+        line += " " + c.text;
+      }
+    } else if (c.text && c.text.trim()) {
+      line += " " + c.text;
     }
     output.push(line);
 
