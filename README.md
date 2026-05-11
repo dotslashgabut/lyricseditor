@@ -37,7 +37,7 @@ A professional-grade, browser-based word-level lyrics and subtitle editor. Desig
     - Fullscreen support.
 - **Undo/Redo**: Full history support for all editing actions (up to 50 steps).
 
-[![Watch the video](https://img.youtube.com/vi/9B7KNXX_V08/0.jpg)](https://www.youtube.com/watch?v=9B7KNXX_V08)
+https://github.com/user-attachments/assets/2eed0d00-c213-4737-b9e3-c4cf02fc6884
 
 ## 📥 Supported Formats
 
