@@ -593,7 +593,8 @@ function escapeXML(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function stringifyTTML(cues, karaoke, durationMs) {
+function stringifyTTML(cues, karaoke, durationMs, options = {}) {
+  const autoEmpty = options.autoEmptyLines !== false;
   let head = `  <head>\n    <metadata>\n      <ttm:title>Lyrics</ttm:title>\n    </metadata>\n    <styling>\n      <style xml:id="s1" tts:textAlign="center" tts:fontFamily="Arial" tts:fontSize="100%"/>\n    </styling>\n    <layout>\n      <region xml:id="bottom" tts:displayAlign="after" tts:extent="80% 40%" tts:origin="10% 50%"/>\n    </layout>\n  </head>`;
   let bodyLines = [];
   
@@ -615,7 +616,7 @@ function stringifyTTML(cues, karaoke, durationMs) {
     
     // Gap filling (blank line support) - only between cues
     const nextStart = (i < cues.length - 1) ? cues[i + 1].startMs : null;
-    if (nextStart && cue.endMs < nextStart - 10) {
+    if (autoEmpty && nextStart && cue.endMs < nextStart - 10) {
       bodyLines.push(`      <p begin="${msToVtt(cue.endMs)}" end="${msToVtt(nextStart)}" region="bottom" style="s1"></p>`);
     }
   }
@@ -728,7 +729,8 @@ function stringifyTXT(cues) {
   return result.trim();
 }
 
-function stringifyLRC(cues, enhanced, durationMs) {
+function stringifyLRC(cues, enhanced, durationMs, options = {}) {
+  const autoEmpty = options.autoEmptyLines !== false;
   let output = [];
   if (durationMs) {
     output.push(`[length:${msToLrc(durationMs)}]`);
@@ -751,7 +753,7 @@ function stringifyLRC(cues, enhanced, durationMs) {
 
     // Add a blank line to clear the screen if there's a gap to the next cue or at the end
     const nextStart = (i < cues.length - 1) ? cues[i + 1].startMs : (durationMs || (c.endMs + 1000));
-    if (c.endMs < nextStart - 10) { // Small threshold to avoid redundant clears
+    if (autoEmpty && c.endMs < nextStart - 10) { // Small threshold to avoid redundant clears
       output.push(`[${msToLrc(c.endMs)}]`);
     }
   }
@@ -776,7 +778,7 @@ function stringifyVTT(cues, karaoke) {
 }
 
 // ── Exporters ──
-function exportAs(cues, format, durationMs) {
+function exportAs(cues, format, durationMs, options = {}) {
   // Deep copy all cues
   const exportCues = JSON.parse(JSON.stringify(cues));
 
@@ -791,13 +793,13 @@ function exportAs(cues, format, durationMs) {
   });
 
   switch(format) {
-    case 'lrc': return stringifyLRC(exportCues, false, durationMs);
-    case 'lrc_enhanced': return stringifyLRC(exportCues, true, durationMs);
+    case 'lrc': return stringifyLRC(exportCues, false, durationMs, options);
+    case 'lrc_enhanced': return stringifyLRC(exportCues, true, durationMs, options);
     case 'srt': return stringifySRT(exportCues);
     case 'vtt': return stringifyVTT(exportCues, false);
     case 'vtt_karaoke': return stringifyVTT(exportCues, true);
-    case 'ttml': return stringifyTTML(exportCues, false, durationMs);
-    case 'ttml_karaoke': return stringifyTTML(exportCues, true, durationMs);
+    case 'ttml': return stringifyTTML(exportCues, false, durationMs, options);
+    case 'ttml_karaoke': return stringifyTTML(exportCues, true, durationMs, options);
     case 'srv1': return stringifySRV1(exportCues);
     case 'srv2': return stringifySRV2(exportCues);
     case 'srv3': return stringifySRV3(exportCues);

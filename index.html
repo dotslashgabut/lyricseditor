@@ -57,6 +57,7 @@
                     <div class="dropdown-item" id="tool-merge-lines"><i class="fas fa-object-group"></i> Merge Selected Lines</div>
                     <div class="dropdown-item" id="tool-split-lines"><i class="fas fa-cut"></i> Split Selected Lines</div>
                     <div class="dropdown-item" id="tool-sync-line-words"><i class="fas fa-expand-arrows-alt"></i> Sync Line to Words</div>
+                    <div class="dropdown-item" id="tool-clear-all" style="color: #ff4d4f;"><i class="fas fa-trash-alt" style="color: #ff4d4f;"></i> Clear All Lines</div>
                     <div class="dropdown-divider"></div>
                     <div class="dropdown-section-title">Text Formatting</div>
                     <div class="dropdown-item" id="tool-format-text"><i class="fas fa-font"></i> Change Case / Format...</div>
@@ -99,6 +100,10 @@
             <div class="dropdown-wrapper">
                 <button class="btn btn-primary" id="btn-export"><i class="fas fa-download"></i> Export</button>
                 <div class="dropdown-menu dropdown-menu-right" id="export-menu">
+                    <div class="dropdown-item-toggle" style="padding: 10px 16px; font-size: 13px; color: var(--text-main); display: flex; align-items: center; cursor: pointer; border-bottom: 1px solid var(--border); margin-bottom: 4px;">
+                        <input type="checkbox" id="toggle-auto-empty-lines" checked style="margin-right: 10px; cursor: pointer;">
+                        <label for="toggle-auto-empty-lines" style="cursor: pointer; flex: 1;">Auto-insert empty lines</label>
+                    </div>
                     <div class="dropdown-section-title">Subtitles</div>
                     <div class="dropdown-item" data-format="lrc"><i class="fas fa-file-alt"></i> LRC</div>
                     <div class="dropdown-item" data-format="srt"><i class="fas fa-file-alt"></i> SRT</div>
@@ -134,11 +139,28 @@
                 </label>
 
                 <div id="file-info-display" style="display:flex; gap:12px; margin-right:20px; font-size:11px; color:var(--text-muted); align-items:center; border-right: 1px solid var(--border); padding-right: 20px;">
-                    <span id="audio-filename-display" style="display:none; white-space:nowrap; max-width:150px; overflow:hidden; text-overflow:ellipsis;" title="Audio Source"><i class="fas fa-music" style="margin-right:4px; color:var(--accent);"></i><span class="fname"></span></span>
-                    <span id="lyrics-filename-display" style="display:none; white-space:nowrap; max-width:150px; overflow:hidden; text-overflow:ellipsis;" title="Lyrics Source"><i class="fas fa-file-lines" style="margin-right:4px; color:var(--accent);"></i><span class="fname"></span></span>
+                    <!-- Audio State -->
+                    <span id="audio-reload-display" title="Reload Last Audio" style="cursor:pointer; display:flex; align-items:center; gap:4px;"><i class="fas fa-music"></i><i class="fas fa-sync-alt" style="font-size:8px;"></i></span>
+                    <span id="audio-filename-display" style="display:none; align-items:center; gap:6px;" title="Audio Source">
+                        <i class="fas fa-music" style="color:var(--accent);"></i>
+                        <span class="fname" style="white-space:nowrap; max-width:120px; overflow:hidden; text-overflow:ellipsis;"></span>
+                        <button class="remove-btn" id="btn-remove-audio" title="Remove Audio" style="background:none; border:none; color:var(--text-muted); cursor:pointer; padding:2px; font-size:10px; flex-shrink:0;"><i class="fas fa-times"></i></button>
+                    </span>
+
+                    <!-- Lyrics State -->
+                    <span id="lyrics-reload-display" title="Reload Last Lyrics" style="cursor:pointer; display:flex; align-items:center; gap:4px;"><i class="fas fa-file-lines"></i><i class="fas fa-sync-alt" style="font-size:8px;"></i></span>
+                    <span id="lyrics-filename-display" style="display:none; align-items:center; gap:6px;" title="Lyrics Source">
+                        <i class="fas fa-file-lines" style="color:var(--accent);"></i>
+                        <span class="fname" style="white-space:nowrap; max-width:120px; overflow:hidden; text-overflow:ellipsis;"></span>
+                        <button class="remove-btn" id="btn-remove-lyrics" title="Remove Lyrics" style="background:none; border:none; color:var(--text-muted); cursor:pointer; padding:2px; font-size:10px; flex-shrink:0;"><i class="fas fa-times"></i></button>
+                    </span>
                 </div>
 
-                <span style="white-space:nowrap;">Timeline View (Drag words or boundaries to adjust)</span>
+                <span style="white-space:nowrap; margin-right: 12px;">Timeline View (Drag words or boundaries to adjust)</span>
+                <div style="display:flex; gap:8px;">
+                    <button class="btn tool-btn" id="btn-add-line-header" style="padding: 4px 10px; font-size: 11px;"><i class="fas fa-plus"></i> Add New Line</button>
+                    <button class="btn tool-btn" id="btn-clear-all-header" style="padding: 4px 10px; font-size: 11px; color: #ff4d4f; border-color: rgba(255, 77, 79, 0.2);"><i class="fas fa-trash"></i> Clear All</button>
+                </div>
             </div>
             <div class="timeline-controls">
                 <button class="icon-btn" id="btn-prev-line" title="Previous Line"><i class="fas fa-chevron-up"></i></button>

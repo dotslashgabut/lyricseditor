@@ -800,6 +800,26 @@ html, body {
         font-size: 12px;
     }
 
+    /* ── New Elements Styles ── */
+    .dropdown-item-toggle:hover {
+        background: var(--bg-panel-hover);
+    }
+
+    .remove-btn {
+        transition: color 0.2s ease, transform 0.2s ease;
+    }
+
+    .remove-btn:hover {
+        color: #ff4d4f !important;
+        transform: scale(1.2);
+    }
+
+    #btn-add-line-header:hover {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+    }
+
     .search-box i {
         display: none; 
     }

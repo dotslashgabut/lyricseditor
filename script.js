@@ -1,8 +1,10 @@
 // ── Global State ──
 let audio = new Audio(), lines = [], isPlaying = false, isRepeat = false;
 let currentTime = 0, duration = 0, rafId = null, activeLineId = null;
-let history = [[]], histIdx = 0, originalFilename = 'lyrics', editingLine = null;
-let lastImportFormat = 'lrc', audioFilename = '', lyricsFilename = '', isWordHighlightEnabled = true;
+let audioFullname = '', lyricsFullname = '';
+let lastAudioFile = null, lastLyricsFile = null;
+let history = [{lines:[], audioFN:'', lyricsFN:'', audioFull:'', lyricsFull:'', origFN:'lyrics'}], histIdx = 0;
+let lastImportFormat = 'lrc', audioFilename = '', lyricsFilename = '', isWordHighlightEnabled = true, originalFilename = 'lyrics', editingLine = null;
 
 const $ = id => document.getElementById(id);
 const playBtn=$('btn-play-pause'), stopBtn=$('btn-stop'), repeatBtn=$('btn-repeat');
@@ -17,14 +19,65 @@ function fmt(s) {
 
 // ── History ──
 function pushHistory() {
-  const snap = JSON.parse(JSON.stringify(lines));
+  const snap = {
+    lines: JSON.parse(JSON.stringify(lines)),
+    audioFN: audioFilename,
+    lyricsFN: lyricsFilename,
+    audioFull: audioFullname,
+    lyricsFull: lyricsFullname,
+    origFN: originalFilename,
+    audioSrc: audio.src
+  };
   history = history.slice(0, histIdx+1);
   history.push(snap);
   if(history.length>50)history.shift();
   histIdx = history.length-1;
 }
-function undo() { if(histIdx>0){histIdx--;lines=JSON.parse(JSON.stringify(history[histIdx]));renderTimeline();} }
-function redo() { if(histIdx<history.length-1){histIdx++;lines=JSON.parse(JSON.stringify(history[histIdx]));renderTimeline();} }
+
+function applySnapshot(snap) {
+  lines = JSON.parse(JSON.stringify(snap.lines));
+  audioFilename = snap.audioFN;
+  lyricsFilename = snap.lyricsFN;
+  audioFullname = snap.audioFull;
+  lyricsFullname = snap.lyricsFull;
+  originalFilename = snap.origFN;
+  if (audio.src !== snap.audioSrc) {
+      audio.src = snap.audioSrc || "";
+      if (audio.src) audio.load();
+  }
+  updateFileUI();
+  renderTimeline();
+  updateDisplay();
+}
+
+function undo() { if(histIdx>0){histIdx--; applySnapshot(history[histIdx]);} }
+function redo() { if(histIdx<history.length-1){histIdx++; applySnapshot(history[histIdx]);} }
+
+function updateFileUI() {
+    const adisp = $('audio-filename-display'), areload = $('audio-reload-display');
+    if (audioFullname) {
+        adisp.style.display = 'inline-flex';
+        adisp.querySelector('.fname').textContent = audioFullname;
+        adisp.title = `Audio: ${audioFullname}`;
+        areload.style.display = 'none';
+    } else {
+        adisp.style.display = 'none';
+        // Show reload only if we have a file to reload
+        areload.style.display = lastAudioFile ? 'inline-flex' : 'none';
+    }
+
+    const ldisp = $('lyrics-filename-display'), lreload = $('lyrics-reload-display');
+    if (lyricsFullname) {
+        ldisp.style.display = 'inline-flex';
+        ldisp.querySelector('.fname').textContent = lyricsFullname;
+        ldisp.title = `Lyrics: ${lyricsFullname}`;
+        lreload.style.display = 'none';
+    } else {
+        ldisp.style.display = 'none';
+        // Show reload only if we have a file to reload
+        lreload.style.display = lastLyricsFile ? 'inline-flex' : 'none';
+    }
+}
 
 // ── Render ──
 function renderTimeline() {
@@ -334,9 +387,9 @@ $('progress-bar').onclick=e=>{if(!duration)return;const r=$('progress-bar').getB
 
 // ── File Loading ──
 $('btn-load-audio').onclick=()=>$('input-audio').click();
-$('input-audio').onchange=e=>{
-  const f=e.target.files[0];
+function handleAudioFile(f) {
   if(f){
+    lastAudioFile = f;
     stopPlay();
     audioFilename = f.name.replace(/\.[^/.]+$/, "");
     originalFilename = audioFilename;
@@ -356,16 +409,19 @@ $('input-audio').onchange=e=>{
     reader.readAsArrayBuffer(f);
     
     // Update display
-    const disp = $('audio-filename-display');
-    disp.style.display = 'inline-flex';
-    disp.querySelector('.fname').textContent = f.name;
-    disp.title = `Audio: ${f.name}`;
-    e.target.value = ""; 
+    audioFullname = f.name;
+    updateFileUI();
+    pushHistory();
   }
+}
+$('input-audio').onchange=e=>{
+  handleAudioFile(e.target.files[0]);
+  e.target.value = ""; 
 };
 
 // Handle audio errors (Chromium PTS issues, corrupt FLAC, etc.)
 audio.onerror = () => {
+  if (!audio.src || audio.src === window.location.href) return; // Ignore intentional ejects
   const err = audio.error;
   let msg = "Audio error occurred";
   let details = "";
@@ -380,6 +436,9 @@ audio.onerror = () => {
     }
     details = err.message ? `\nBrowser Details: ${err.message}` : "";
     console.error("Audio Error Code:", err.code, "Message:", err.message);
+  } else {
+      // If there's an error event but no error object, it might be an empty src issue
+      return; 
   }
   
   alert(`${msg}${details}\n\nPlease convert the audio to a standard MP3/WAV, or try using Firefox.`);
@@ -387,21 +446,20 @@ audio.onerror = () => {
   // Revert UI since audio failed
   stopPlay();
   audioFilename = "";
-  $('audio-filename-display').style.display = 'none';
+  audioFullname = "";
+  updateFileUI();
   if(lines.length === 0) $('placeholder').style.display = 'flex';
 };
 $('btn-load-lyrics').onclick=()=>$('input-lyrics').click();
-$('input-lyrics').onchange=e=>{
-  const f=e.target.files[0];if(!f)return;
+function handleLyricsFile(f) {
+  if(!f) return;
+  lastLyricsFile = f;
   stopPlay();
   lyricsFilename = f.name.replace(/\.[^/.]+$/, "");
   if(!audioFilename) originalFilename = lyricsFilename;
   
-  // Update display
-  const disp = $('lyrics-filename-display');
-  disp.style.display = 'inline-flex';
-  disp.querySelector('.fname').textContent = f.name;
-  disp.title = `Lyrics: ${f.name}`;
+  lyricsFullname = f.name;
+  updateFileUI();
 
   const r=new FileReader();
   r.onload=ev=>{
@@ -419,11 +477,15 @@ $('input-lyrics').onchange=e=>{
       else if(lines.length) duration = lines[lines.length-1].endMs + 2000;
     }
     
-    history=[JSON.parse(JSON.stringify(lines))];histIdx=0;
+    pushHistory();
     renderTimeline();
-    e.target.value = ""; // Clear to allow re-loading same file
+    updateDisplay();
   };
   r.readAsText(f);
+}
+$('input-lyrics').onchange=e=>{
+  handleLyricsFile(e.target.files[0]);
+  e.target.value = "";
 };
 
 // ── Dropdown Menus ──
@@ -438,12 +500,14 @@ document.addEventListener('click',()=>document.querySelectorAll('.dropdown-menu.
 // ── Export ──
 function performExport(f) {
   if(!f || !lines.length) return;
+  const autoEmpty = $('toggle-auto-empty-lines') ? $('toggle-auto-empty-lines').checked : true;
   const ext={lrc:'lrc',lrc_enhanced:'lrc',srt:'srt',vtt:'vtt',vtt_karaoke:'vtt',ttml:'ttml',ttml_karaoke:'ttml',srv1:'srv1',srv2:'srv2',srv3:'srv3',srv3_karaoke:'srv3',json:'json',json3:'json',lyricsfile:'lyricsfile',txt:'txt'}[f]||'txt';
   const name = originalFilename + " - lyricseditor." + ext;
-  downloadFile(exportAs(lines.map(l=>({startMs:l.startMs,endMs:l.endMs,text:l.text,words:l.words})), f, duration), name);
+  downloadFile(exportAs(lines.map(l=>({startMs:l.startMs,endMs:l.endMs,text:l.text,words:l.words})), f, duration, { autoEmptyLines: autoEmpty }), name);
 }
 
 $('export-menu').onclick=e=>{
+  e.stopPropagation(); // Prevent closing when clicking non-item areas (like the toggle)
   const item=e.target.closest('.dropdown-item');if(!item)return;
   performExport(item.dataset.format);
   $('export-menu').classList.remove('open');
@@ -454,6 +518,14 @@ $('tool-shift-time').onclick=()=>{$('tools-menu').classList.remove('open');$('sh
 $('tool-find-replace').onclick=()=>{$('tools-menu').classList.remove('open');$('find-replace-modal').style.display='flex';};
 $('tool-sort-rows').onclick=()=>{lines.sort((a,b)=>a.startMs-b.startMs);pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
 $('tool-remove-empty-lines').onclick=()=>{lines=lines.filter(l=>(l.words&&l.words.length>0)||l.text.trim());pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
+$('tool-clear-all').onclick=()=>{
+    if(confirm("Are you sure you want to clear all lines? This will reset the timeline.")) {
+        lines = [];
+        pushHistory();
+        renderTimeline();
+    }
+    $('tools-menu').classList.remove('open');
+};
 
 $('tool-remove-overlaps').onclick=()=>{for(let i=0;i<lines.length-1;i++){if(lines[i].endMs>lines[i+1].startMs){lines[i].endMs=lines[i+1].startMs;if(lines[i].words&&lines[i].words.length)lines[i].words[lines[i].words.length-1].endMs=Math.min(lines[i].words[lines[i].words.length-1].endMs,lines[i+1].startMs);}}pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
 $('tool-merge-lines').onclick=()=>{const checks=Array.from(document.querySelectorAll('.line-checkbox:checked')).map(c=>parseInt(c.dataset.id));if(checks.length>1){const selected=lines.filter(l=>checks.includes(l.id));const first=selected[0],last=selected[selected.length-1];first.endMs=last.endMs;first.text=selected.map(l=>(l.text||"").trim()).filter(t=>t).join(' ');first.words=selected.flatMap(l=>l.words||[]);lines=lines.filter(l=>l.id===first.id||!checks.includes(l.id));pushHistory();renderTimeline();}$('tools-menu').classList.remove('open');};
@@ -753,6 +825,60 @@ $('btn-fullscreen').onclick = () => {
 $('btn-shortcuts').onclick = () => $('shortcuts-modal').style.display = 'flex';
 $('shortcuts-close').onclick = () => $('shortcuts-modal').style.display = 'none';
 $('shortcuts-close-top').onclick = () => $('shortcuts-modal').style.display = 'none';
+
+$('btn-remove-audio').onclick = (e) => {
+    e.stopPropagation();
+    if (confirm("Remove current audio source?")) {
+        stopPlay();
+        // We don't revoke here so Undo can restore it, 
+        // revocation will happen when a NEW file is loaded or browser closed.
+        audio.removeAttribute('src');
+        audio.load();
+        audioFilename = "";
+        audioFullname = "";
+        $('input-audio').value = ""; // Clear input to allow re-selection
+        updateFileUI();
+        // Keep duration if lyrics exist, or reset
+        if(!lines.length) duration = 0;
+        pushHistory();
+        updateDisplay();
+    }
+};
+
+$('audio-reload-display').onclick = () => {
+    if (lastAudioFile) handleAudioFile(lastAudioFile);
+    else $('input-audio').click();
+};
+$('lyrics-reload-display').onclick = () => {
+    if (lastLyricsFile) handleLyricsFile(lastLyricsFile);
+    else $('input-lyrics').click();
+};
+
+$('btn-remove-lyrics').onclick = (e) => {
+    e.stopPropagation();
+    if (confirm("Clear all lyrics and reset editor?")) {
+        lines = [];
+        lyricsFilename = "";
+        lyricsFullname = "";
+        $('input-lyrics').value = ""; // Clear input to allow re-selection
+        updateFileUI();
+        pushHistory();
+        renderTimeline();
+    }
+};
+
+$('btn-add-line-header').onclick = () => {
+    insertBlankLine(lines.length);
+};
+
+$('btn-clear-all-header').onclick = () => {
+    if(confirm("Are you sure you want to clear all lines?")) {
+        lines = [];
+        pushHistory();
+        renderTimeline();
+    }
+};
+
 window.addEventListener('click', (e) => { if (e.target === $('shortcuts-modal')) $('shortcuts-modal').style.display = 'none'; });
 
 // Handle Esc key or other fullscreen exits
@@ -765,4 +891,5 @@ document.addEventListener('fullscreenchange', () => {
 });
 
 // ── Init ──
+updateFileUI();
 renderTimeline();updateDisplay();
