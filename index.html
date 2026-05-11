@@ -76,6 +76,9 @@
                 <button class="btn toggle-btn active" id="view-one-line">Default</button>
                 <button class="btn toggle-btn" id="view-compact">Compact</button>
             </div>
+            <!-- Word Highlight Toggle -->
+            <button class="icon-btn" id="btn-toggle-highlight" title="Toggle Word Highlight" style="color: var(--accent);"><i class="fas fa-highlighter"></i></button>
+
             <!-- Keyboard Shortcuts Help -->
             <button class="icon-btn" id="btn-shortcuts" title="Keyboard Shortcuts"><i class="fas fa-keyboard"></i></button>
 
@@ -252,8 +255,24 @@
                     <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">F</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
+                    <span style="color:var(--text-muted);">Find & Replace</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">G</kbd>
+                </div>
+                <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
+                    <span style="color:var(--text-muted);">Shift Time...</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">T</kbd>
+                </div>
+                <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                     <span style="color:var(--text-muted);">Hot Fix</span>
                     <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">H</kbd>
+                </div>
+                <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
+                    <span style="color:var(--text-muted);">Shortcuts Info</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">K</kbd>
+                </div>
+                <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
+                    <span style="color:var(--text-muted);">Toggle Fullscreen</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">L</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                     <span style="color:var(--text-muted);">Default View</span>
@@ -273,7 +292,7 @@
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                     <span style="color:var(--text-muted);">Volume +/-</span>
-                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">Ctrl + ↑ / ↓</kbd>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">Ctrl/Cmd + ↑ / ↓</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                     <span style="color:var(--text-muted);">Shift Time -100ms</span>
@@ -284,12 +303,20 @@
                     <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">]</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
+                    <span style="color:var(--text-muted);">Shift Time -500ms</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">Ctrl/Cmd + [</kbd>
+                </div>
+                <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
+                    <span style="color:var(--text-muted);">Shift Time +500ms</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">Ctrl/Cmd + ]</kbd>
+                </div>
+                <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                     <span style="color:var(--text-muted);">Undo</span>
-                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">Ctrl + Z</kbd>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">Ctrl/Cmd + Z</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                     <span style="color:var(--text-muted);">Redo</span>
-                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">Ctrl + Y</kbd>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">Ctrl/Cmd + Y</kbd>
                 </div>
             </div>
             <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:20px;">

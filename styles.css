@@ -124,7 +124,8 @@ html, body {
 
 .search-box {
     position: relative;
-    width: 220px;
+    width: 100%;
+    max-width: 220px;
 }
 
 .search-box i {
@@ -448,6 +449,8 @@ html, body {
 }
 
 .word-block:hover { background: #3a3a40; }
+.word-block.active { background: #d3d3d3; }
+.word-block.active .word-text, .word-block.active .word-duration { color: var(--bg-dark); }
 .word-block.dragging { cursor: grabbing; background: #454549; z-index: 15; }
 
 .word-text {

@@ -2,7 +2,7 @@
 let audio = new Audio(), lines = [], isPlaying = false, isRepeat = false;
 let currentTime = 0, duration = 0, rafId = null, activeLineId = null;
 let history = [[]], histIdx = 0, originalFilename = 'lyrics', editingLine = null;
-let lastImportFormat = 'lrc', audioFilename = '', lyricsFilename = '';
+let lastImportFormat = 'lrc', audioFilename = '', lyricsFilename = '', isWordHighlightEnabled = true;
 
 const $ = id => document.getElementById(id);
 const playBtn=$('btn-play-pause'), stopBtn=$('btn-stop'), repeatBtn=$('btn-repeat');
@@ -249,9 +249,24 @@ function updateDisplay(){
       activeLineId=line.id;
       if(!te.classList.contains('active')){te.classList.add('active');if(isPlaying)te.scrollIntoView({behavior:'smooth',block:'nearest'});}
       if(pi){pi.style.display='block';pi.style.left=((currentTime-line.startMs)/(line.endMs-line.startMs)*100)+'%';}
+      if(line.words){
+        line.words.forEach(w=>{
+          const we=$(`w-${w.id}`);
+          if(we){
+            if(isWordHighlightEnabled && currentTime>=w.startMs&&currentTime<w.endMs) we.classList.add('active');
+            else we.classList.remove('active');
+          }
+        });
+      }
     } else {
       te.classList.remove('active');
       if(pi)pi.style.display='none';
+      if(line.words){
+        line.words.forEach(w=>{
+          const we=$(`w-${w.id}`);
+          if(we) we.classList.remove('active');
+        });
+      }
     }
   });
 }
@@ -543,12 +558,30 @@ function setViewMode(mode) {
 $('view-one-line').onclick = () => setViewMode('default');
 $('view-compact').onclick = () => setViewMode('compact');
 
+// ── Highlight Toggle ──
+$('btn-toggle-highlight').onclick = () => {
+    isWordHighlightEnabled = !isWordHighlightEnabled;
+    $('btn-toggle-highlight').style.color = isWordHighlightEnabled ? 'var(--accent)' : 'var(--text-muted)';
+    updateDisplay();
+};
+
 // ── Prev/Next Line ──
 $('btn-prev-line').onclick=()=>{if(!lines.length)return;let activeIdx=-1;for(let i=0;i<lines.length;i++){if(lines[i].startMs<=currentTime+50)activeIdx=i;else break;}let targetIdx=activeIdx-1;if(targetIdx<0)targetIdx=0;seekMs(lines[targetIdx].startMs);};
 $('btn-next-line').onclick=()=>{if(!lines.length)return;const next=lines.find(l=>l.startMs>currentTime+50);if(next)seekMs(next.startMs);};
 
 // ── Keyboard Shortcuts ──
 window.addEventListener('keydown',e=>{
+  if(e.key === 'Escape'){
+    $('shift-modal').style.display = 'none';
+    $('find-replace-modal').style.display = 'none';
+    $('shortcuts-modal').style.display = 'none';
+    $('edit-text-modal').style.display = 'none';
+    if(document.activeElement === $('search-input')){
+      $('search-input').blur();
+    }
+    return;
+  }
+
   if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
   
   // Playback
@@ -560,9 +593,13 @@ window.addEventListener('keydown',e=>{
   if(e.key==='2'){$('btn-load-lyrics').click();}
   if(e.key==='e'||e.key==='E'){e.preventDefault();performExport(lastImportFormat);}
   if(e.key==='f'||e.key==='F'){e.preventDefault();$('search-input').focus();}
+  if(e.key==='g'||e.key==='G'){e.preventDefault();$('tool-find-replace').click();}
+  if(e.key==='t'||e.key==='T'){e.preventDefault();$('tool-shift-time').click();}
   if(e.key==='h'||e.key==='H'){e.preventDefault();$('btn-hotfix').click();}
   if(e.key==='d'||e.key==='D'){e.preventDefault();setViewMode('default');}
   if(e.key==='c'||e.key==='C'){e.preventDefault();setViewMode('compact');}
+  if(e.key==='k'||e.key==='K'){e.preventDefault();$('btn-shortcuts').click();}
+  if(e.key==='l'||e.key==='L'){e.preventDefault();$('btn-fullscreen').click();}
   
   // History
   if((e.ctrlKey||e.metaKey)&&e.key==='z'&&!e.shiftKey){e.preventDefault();undo();}
@@ -581,8 +618,18 @@ window.addEventListener('keydown',e=>{
   }
 
   // Global Time Shift (Nudge)
-  if(e.key==='[' || e.key==='{'){e.preventDefault();lines.forEach(l=>{l.startMs=Math.max(0,l.startMs-100);l.endMs=Math.max(0,l.endMs-100);if(l.words)l.words.forEach(w=>{w.startMs=Math.max(0,w.startMs-100);w.endMs=Math.max(0,w.endMs-100);});});pushHistory();renderTimeline();}
-  if(e.key===']' || e.key==='}'){e.preventDefault();lines.forEach(l=>{l.startMs+=100;l.endMs+=100;if(l.words)l.words.forEach(w=>{w.startMs+=100;w.endMs+=100;});});pushHistory();renderTimeline();}
+  if(e.key==='[' || e.key==='{'){
+    e.preventDefault();
+    const shift = (e.ctrlKey || e.metaKey) ? 500 : 100;
+    lines.forEach(l=>{l.startMs=Math.max(0,l.startMs-shift);l.endMs=Math.max(0,l.endMs-shift);if(l.words)l.words.forEach(w=>{w.startMs=Math.max(0,w.startMs-shift);w.endMs=Math.max(0,w.endMs-shift);});});
+    pushHistory();renderTimeline();
+  }
+  if(e.key===']' || e.key==='}'){
+    e.preventDefault();
+    const shift = (e.ctrlKey || e.metaKey) ? 500 : 100;
+    lines.forEach(l=>{l.startMs+=shift;l.endMs+=shift;if(l.words)l.words.forEach(w=>{w.startMs+=shift;w.endMs+=shift;});});
+    pushHistory();renderTimeline();
+  }
 });
 
 // ── Search ──
