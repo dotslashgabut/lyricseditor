@@ -1,3 +1,35 @@
+// ── Database (IndexedDB) for True Persistence ──
+const DB_NAME = 'LyricsEditorDB', DB_STORE = 'files';
+function openDB() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = () => req.result.createObjectStore(DB_STORE);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+async function saveFileToDB(key, file) {
+    try {
+        const db = await openDB();
+        const tx = db.transaction(DB_STORE, 'readwrite');
+        tx.objectStore(DB_STORE).put(file, key);
+        return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; });
+    } catch(e) { console.error("DB Save Failed", e); }
+}
+async function getFileFromDB(key) {
+    try {
+        const db = await openDB();
+        const tx = db.transaction(DB_STORE, 'readonly');
+        const req = tx.objectStore(DB_STORE).get(key);
+        return new Promise((res, rej) => { req.onsuccess = () => res(req.result); req.onerror = rej; });
+    } catch(e) { return null; }
+}
+async function clearDB() {
+    const db = await openDB();
+    const tx = db.transaction(DB_STORE, 'readwrite');
+    tx.objectStore(DB_STORE).clear();
+}
+
 // ── Global State ──
 let audio = new Audio(), lines = [], isPlaying = false, isRepeat = false;
 let currentTime = 0, duration = 0, rafId = null, activeLineId = null;
@@ -32,6 +64,59 @@ function pushHistory() {
   history.push(snap);
   if(history.length>50)history.shift();
   histIdx = history.length-1;
+  saveSession();
+}
+
+function saveSession() {
+    try {
+        const session = {
+            lines: lines,
+            audioFN: audioFilename,
+            lyricsFN: lyricsFilename,
+            audioFull: audioFullname,
+            lyricsFull: lyricsFullname,
+            origFN: originalFilename,
+            duration: duration,
+            lastImportFormat: lastImportFormat
+        };
+        localStorage.setItem('lyricseditor_session', JSON.stringify(session));
+    } catch(e) { console.error("Auto-save failed", e); }
+}
+
+function loadSession() {
+    const data = localStorage.getItem('lyricseditor_session');
+    if (!data) return false;
+    try {
+        const snap = JSON.parse(data);
+        lines = snap.lines || [];
+        audioFilename = snap.audioFN || '';
+        lyricsFilename = snap.lyricsFN || '';
+        audioFullname = snap.audioFull || '';
+        lyricsFullname = snap.lyricsFull || '';
+        originalFilename = snap.origFN || 'lyrics';
+        duration = snap.duration || 0;
+        lastImportFormat = snap.lastImportFormat || 'lrc';
+        
+        // Initial history entry for the loaded session
+        history = [{
+            lines: JSON.parse(JSON.stringify(lines)),
+            audioFN: audioFilename,
+            lyricsFN: lyricsFilename,
+            audioFull: audioFullname,
+            lyricsFull: lyricsFullname,
+            origFN: originalFilename,
+            audioSrc: ''
+        }];
+        histIdx = 0;
+        
+        updateFileUI();
+        renderTimeline();
+        updateDisplay();
+        return true;
+    } catch(e) {
+        console.error("Session load failed", e);
+        return false;
+    }
 }
 
 function applySnapshot(snap) {
@@ -62,8 +147,9 @@ function updateFileUI() {
         areload.style.display = 'none';
     } else {
         adisp.style.display = 'none';
-        // Show reload only if we have a file to reload
-        areload.style.display = lastAudioFile ? 'inline-flex' : 'none';
+        // Always show reload/load icon if slot is empty
+        areload.style.display = 'inline-flex';
+        areload.title = lastAudioFile ? "Reload Last Audio" : "Load Audio";
     }
 
     const ldisp = $('lyrics-filename-display'), lreload = $('lyrics-reload-display');
@@ -74,8 +160,9 @@ function updateFileUI() {
         lreload.style.display = 'none';
     } else {
         ldisp.style.display = 'none';
-        // Show reload only if we have a file to reload
-        lreload.style.display = lastLyricsFile ? 'inline-flex' : 'none';
+        // Always show reload/load icon if slot is empty
+        lreload.style.display = 'inline-flex';
+        lreload.title = lastLyricsFile ? "Reload Last Lyrics" : "Load Lyrics";
     }
 }
 
@@ -390,6 +477,7 @@ $('btn-load-audio').onclick=()=>$('input-audio').click();
 function handleAudioFile(f) {
   if(f){
     lastAudioFile = f;
+    saveFileToDB('lastAudio', f); // Persist to DB
     stopPlay();
     audioFilename = f.name.replace(/\.[^/.]+$/, "");
     originalFilename = audioFilename;
@@ -454,6 +542,7 @@ $('btn-load-lyrics').onclick=()=>$('input-lyrics').click();
 function handleLyricsFile(f) {
   if(!f) return;
   lastLyricsFile = f;
+  saveFileToDB('lastLyrics', f); // Persist to DB
   stopPlay();
   lyricsFilename = f.name.replace(/\.[^/.]+$/, "");
   if(!audioFilename) originalFilename = lyricsFilename;
@@ -525,6 +614,13 @@ $('tool-clear-all').onclick=()=>{
         renderTimeline();
     }
     $('tools-menu').classList.remove('open');
+};
+
+$('tool-clear-session').onclick=()=>{
+    if(confirm("Clear saved session and reset editor? This will refresh the page.")) {
+        localStorage.removeItem('lyricseditor_session');
+        clearDB().then(() => location.reload());
+    }
 };
 
 $('tool-remove-overlaps').onclick=()=>{for(let i=0;i<lines.length-1;i++){if(lines[i].endMs>lines[i+1].startMs){lines[i].endMs=lines[i+1].startMs;if(lines[i].words&&lines[i].words.length)lines[i].words[lines[i].words.length-1].endMs=Math.min(lines[i].words[lines[i].words.length-1].endMs,lines[i+1].startMs);}}pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
@@ -768,6 +864,8 @@ window.addEventListener('keydown',e=>{
   if(e.key==='c'||e.key==='C'){e.preventDefault();setViewMode('compact');}
   if(e.key==='k'||e.key==='K'){e.preventDefault();$('btn-shortcuts').click();}
   if(e.key==='l'||e.key==='L'){e.preventDefault();$('btn-fullscreen').click();}
+  if(e.key==='n'||e.key==='N'){e.preventDefault(); insertBlankLine(lines.length);}
+  if(e.key==='Delete'){e.preventDefault(); $('btn-delete-selected').click();}
   
   // History
   if((e.ctrlKey||e.metaKey)&&e.key==='z'&&!e.shiftKey){e.preventDefault();undo();}
@@ -879,6 +977,24 @@ $('btn-clear-all-header').onclick = () => {
     }
 };
 
+$('btn-reset-session-header').onclick = () => {
+    if(confirm("Clear saved session and reset editor? This will refresh the page.")) {
+        localStorage.removeItem('lyricseditor_session');
+        clearDB().then(() => location.reload());
+    }
+};
+
+$('btn-delete-selected').onclick = () => {
+    const checks = document.querySelectorAll('.line-checkbox:checked');
+    if (!checks.length) return;
+    if (confirm(`Are you sure you want to delete ${checks.length} selected lines?`)) {
+        const selectedIds = Array.from(checks).map(c => parseInt(c.dataset.id));
+        lines = lines.filter(l => !selectedIds.includes(l.id));
+        pushHistory();
+        renderTimeline();
+    }
+};
+
 window.addEventListener('click', (e) => { if (e.target === $('shortcuts-modal')) $('shortcuts-modal').style.display = 'none'; });
 
 // Handle Esc key or other fullscreen exits
@@ -891,5 +1007,24 @@ document.addEventListener('fullscreenchange', () => {
 });
 
 // ── Init ──
-updateFileUI();
-renderTimeline();updateDisplay();
+(async function init() {
+    loadSession(); // Load text/metadata immediately (very fast)
+    updateFileUI();
+    renderTimeline();
+    updateDisplay();
+
+    // Load large binary files in the background to prevent UI lag
+    getFileFromDB('lastLyrics').then(file => {
+        if (file) {
+            lastLyricsFile = file;
+            updateFileUI();
+        }
+    });
+
+    getFileFromDB('lastAudio').then(file => {
+        if (file) {
+            lastAudioFile = file;
+            updateFileUI();
+        }
+    });
+})();

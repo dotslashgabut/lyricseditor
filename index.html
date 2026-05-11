@@ -4,21 +4,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Premium Lyrics Editor - LRC, SRT, VTT, TTML & Subtitle Sync Tool</title>
-    <meta name="description" content="Professional word-level lyrics and subtitle editor. Supports LRC, SRT, VTT, TTML, LRCLIB, and YouTube JSON formats with high-precision synchronization.">
+    <title>Premium Lyrics & Subtitle Editor - Word-Level Timeline & Drag-Drop Sync Tool</title>
+    <meta name="description" content="Professional word-level lyrics and subtitle editor with intuitive drag-and-drop timeline. Sync LRC, SRT, VTT, TTML, and YouTube formats with high-precision timing.">
 
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://dotslashgabut.github.io/lyricseditor/">
-    <meta property="og:title" content="Premium Lyrics Editor - LRC, SRT, VTT, TTML & Subtitle Sync Tool">
-    <meta property="og:description" content="Professional word-level lyrics and subtitle editor. High-precision synchronization for LRC, SRT, VTT, and more.">
+    <meta property="og:title" content="Premium Lyrics & Subtitle Editor - Word-Level Timeline & Drag-Drop Sync Tool">
+    <meta property="og:description" content="Professional word-level lyrics editor with drag-and-drop timeline. High-precision synchronization for LRC, SRT, VTT, and more.">
     <meta property="og:image" content="https://dotslashgabut.github.io/lyricseditor/screenshot.png">
 
     <!-- Twitter / X -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:site" content="@dotslashgabut">
     <meta name="twitter:url" content="https://dotslashgabut.github.io/lyricseditor/">
-    <meta name="twitter:title" content="Premium Lyrics Editor - LRC, SRT, VTT, TTML & Subtitle Sync Tool">
+    <meta name="twitter:title" content="Premium Lyrics & Subtitle Editor - Word-Level Timeline & Drag-Drop Sync Tool">
     <meta name="twitter:description" content="Professional word-level lyrics and subtitle editor. High-precision synchronization for LRC, SRT, VTT, and more.">
     <meta name="twitter:image" content="https://dotslashgabut.github.io/lyricseditor/screenshot.png">
 
@@ -70,6 +70,9 @@
                     <div class="dropdown-item" id="tool-compact-ws"><i class="fas fa-text-width"></i> Compact Whitespace</div>
                     <div class="dropdown-item" id="tool-clear-words"><i class="fas fa-ban"></i> Clear All Word Timings</div>
                     <div class="dropdown-item" id="tool-distribute-words"><i class="fas fa-align-justify"></i> Distribute Words Evenly</div>
+                    <div class="dropdown-divider"></div>
+                    <div class="dropdown-section-title">Session Management</div>
+                    <div class="dropdown-item" id="tool-clear-session" style="color: #ff4d4f;"><i class="fas fa-broom"></i> Clear Saved Session (Reset)</div>
                 </div>
             </div>
 
@@ -156,10 +159,12 @@
                     </span>
                 </div>
 
-                <span style="white-space:nowrap; margin-right: 12px;">Timeline View (Drag words or boundaries to adjust)</span>
+                <span style="white-space:nowrap; margin-right: 12px; font-style: italic; color: var(--text-muted);">Drag words or boundaries to adjust</span>
                 <div style="display:flex; gap:8px;">
                     <button class="btn tool-btn" id="btn-add-line-header" style="padding: 4px 10px; font-size: 11px;"><i class="fas fa-plus"></i> Add New Line</button>
+                    <button class="btn tool-btn" id="btn-delete-selected" style="padding: 4px 10px; font-size: 11px; color: #ff4d4f; border-color: rgba(255, 77, 79, 0.2);" title="Delete selected lines"><i class="fas fa-trash-alt"></i> Delete Selected</button>
                     <button class="btn tool-btn" id="btn-clear-all-header" style="padding: 4px 10px; font-size: 11px; color: #ff4d4f; border-color: rgba(255, 77, 79, 0.2);"><i class="fas fa-trash"></i> Clear All</button>
+                    <button class="btn tool-btn" id="btn-reset-session-header" style="padding: 4px 10px; font-size: 11px; color: #ff4d4f; border-color: rgba(255, 77, 79, 0.2);" title="Clear session and reload page"><i class="fas fa-broom"></i> Reset Session</button>
                 </div>
             </div>
             <div class="timeline-controls">
@@ -312,6 +317,14 @@
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                     <span style="color:var(--text-muted);">Stop</span>
                     <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">S</kbd>
+                </div>
+                <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
+                    <span style="color:var(--text-muted);">Add New Line</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">N</kbd>
+                </div>
+                <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
+                    <span style="color:var(--text-muted);">Delete Selected</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">Delete</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                     <span style="color:var(--text-muted);">Toggle Repeat</span>

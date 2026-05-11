@@ -8,7 +8,7 @@ A professional-grade, browser-based word-level lyrics and subtitle editor. Desig
 
 </div>
 
-![LyricsEditor Screenshot](screenshot.png)
+https://github.com/user-attachments/assets/2eed0d00-c213-4737-b9e3-c4cf02fc6884
 
 ## ✨ Features
 
@@ -35,9 +35,20 @@ A professional-grade, browser-based word-level lyrics and subtitle editor. Desig
     - Responsive layout (works on tablets and desktops).
     - Compact and Default view modes.
     - Fullscreen support.
-- **Undo/Redo**: Full history support for all editing actions (up to 50 steps).
+- **Workspace Management**:
+    - **Add New Line**: Quick insertion button directly in the timeline header.
+    - **Clear All**: One-click cleanup to start a new project from scratch.
+    - **Asset Eject/Reload**: Easily remove or re-load audio and lyrics files.
+    - **Smart Tooltips**: Full filename display on hover for easy identification.
+- **Session Persistence**:
+    - **Auto-Save**: Progress is automatically saved to local storage.
+    - **True Persistence**: Uses **IndexedDB** to store audio and lyrics references, allowing for instant project restoration even after a page refresh (F5) without re-browsing files.
+    - **Session Reset**: Clear your workspace and cache with a single "Reset Session" button.
+- **Export Configuration**:
+    - **Toggle Empty Lines**: Optional automatic insertion of empty "clear screen" lines in LRC and TTML exports to match the editor's visual state.
+- **Undo/Redo**: Full history support for all editing actions, including file loading and removal (up to 50 steps).
 
-https://github.com/user-attachments/assets/2eed0d00-c213-4737-b9e3-c4cf02fc6884
+![LyricsEditor Screenshot](screenshot.png)
 
 ## 📥 Supported Formats
 
@@ -64,6 +75,8 @@ https://github.com/user-attachments/assets/2eed0d00-c213-4737-b9e3-c4cf02fc6884
 | `2` | Load Lyrics File |
 | `Space` | Play / Pause |
 | `S` | Stop |
+| `N` | Add New Line |
+| `Delete` | Delete Selected Lines |
 | `R` | Toggle Repeat (Loop current line) |
 | `M` | Mute / Unmute |
 | `E` | Quick Export (uses same format as imported) |
@@ -116,7 +129,10 @@ Once the files are downloaded, you can simply open `index.html` in any modern we
 
 - **Framework**: No framework (Vanilla JS).
 - **Precision**: Uses `requestAnimationFrame` for high-precision synchronization between audio and UI.
-- **Storage**: No data is uploaded to any server. All processing happens locally in your browser.
+- **Persistence**: Implements a dual-storage system:
+    - **LocalStorage**: Stores text metadata, editing lines, and UI preferences.
+    - **IndexedDB**: Persists large binary assets (Audio & Lyrics files) to allow instant re-loading without server-side storage.
+- **Privacy & Security**: 100% Client-Side. No data is ever uploaded to a server. All processing and storage happen locally within your browser's private sandbox.
 
 ## 📄 License
 
