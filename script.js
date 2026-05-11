@@ -608,7 +608,7 @@ $('fr-apply').onclick=()=>{
 // ── Edit Text Modal ──
 $('et-cancel').onclick = () => $('edit-text-modal').style.display = 'none';
 $('et-apply').onclick = () => {
-  const newText = $('edit-text-input').value.trim();
+  const newText = $('edit-text-input').value.replace(/\s+/g, ' ').trim();
   if (newText && editingLine) {
     editingLine.text = newText;
     const newWords = editingLine.text.split(/\s+/);

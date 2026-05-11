@@ -720,7 +720,8 @@ function exportAs(cues, format, durationMs) {
 function stringifyLyricsFile(cues, durationMs) {
   let yaml = `version: "1.0"\nmetadata:\n  title: ""\n  artist: ""\n  instrumental: false\n  album: ""\n  duration_ms: ${Math.round(durationMs || 0)}\nlines:\n`;
   cues.forEach(c => {
-    yaml += `  - text: "${c.text.replace(/"/g, '\\"')}"\n`;
+    const cleanText = c.text.replace(/\s+/g, ' ').trim();
+    yaml += `  - text: "${cleanText.replace(/"/g, '\\"')}"\n`;
     yaml += `    words:\n`;
     if (c.words && c.words.length) {
       c.words.forEach((w, i) => {
@@ -737,7 +738,8 @@ function stringifyLyricsFile(cues, durationMs) {
   });
   yaml += `plain: |-\n`;
   cues.forEach(c => {
-    yaml += `    ${c.text}\n`;
+    const cleanText = c.text.replace(/\s+/g, ' ').trim();
+    yaml += `    ${cleanText}\n`;
   });
   return yaml;
 }
