@@ -75,6 +75,14 @@ https://github.com/user-attachments/assets/2eed0d00-c213-4737-b9e3-c4cf02fc6884
 - **Karaoke (Word-Level)**: Enhanced LRC, VTT (Words), TTML (Words), YouTube SRV3 (Words)
 - **Other**: YouTube SRV1/SRV2/SRV3, JSON, YouTube JSON3, LRCLIB, Plain Text
 
+## 🎵 Audio Precision & Sync
+
+For professional, high-precision work, please consider the following:
+
+- **Format Choice**: Use **WAV** or **FLAC** whenever possible. These formats are sample-accurate.
+- **MP3 Limitations**: Standard MP3 files often contain "encoder padding" (silence) at the beginning, which can cause a slight offset (20ms - 100ms) between the audio and your lyrics.
+- **Global Nudge**: If your audio feels consistently off-sync with the lyrics, use the **`[`** and **`]`** keys to shift all timings backward or forward by 100ms increments. Use **`Ctrl + [` / `]`** for 500ms shifts.
+
 ## ⌨️ Keyboard Shortcuts
 
 | Shortcut | Action |

@@ -175,6 +175,11 @@ function renderTimeline() {
         <i class="fas fa-cloud-upload-alt" style="font-size: 32px; margin-bottom: 12px; opacity: 0.5;"></i><br>
         Load audio and lyrics to start editing<br>
         <span style="font-size:12px; opacity:0.7;">(or Drag & Drop files anywhere)</span>
+        <div style="margin-top: 20px; font-size: 11px; opacity: 0.6; max-width: 400px; line-height: 1.5; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
+            <strong>Pro Tip for High Precision:</strong><br>
+            Use <b>WAV</b> or <b>FLAC</b> for sample-accurate sync. MP3 files may have slight timing offsets. 
+            If audio feels off, use <b>[</b> or <b>]</b> to nudge all timings.
+        </div>
       </div>`;
     statL.textContent=0;statW.textContent=0;return;
   }
@@ -854,71 +859,87 @@ $('btn-prev-line').onclick=()=>{if(!lines.length)return;let activeIdx=-1;for(let
 $('btn-next-line').onclick=()=>{if(!lines.length)return;const next=lines.find(l=>l.startMs>currentTime+50);if(next)seekMs(next.startMs);};
 
 // ── Keyboard Shortcuts ──
-window.addEventListener('keydown',e=>{
-  if(e.key === 'Escape'){
+window.addEventListener('keydown', e => {
+  const isMod = e.ctrlKey || e.metaKey;
+
+  if (e.key === 'Escape') {
     $('shift-modal').style.display = 'none';
     $('split-line-modal').style.display = 'none';
     $('find-replace-modal').style.display = 'none';
     $('shortcuts-modal').style.display = 'none';
     $('edit-text-modal').style.display = 'none';
     $('format-text-modal').style.display = 'none';
-    if(document.activeElement === $('search-input')){
+    if (document.activeElement === $('search-input')) {
       $('search-input').blur();
     }
     return;
   }
 
-  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
-  
-  // Playback
-  if(e.code==='Space'){e.preventDefault();togglePlay();}
-  if(e.key==='s'||e.key==='S'){e.preventDefault();stopPlay();}
-  if(e.key==='r'||e.key==='R'){e.preventDefault();toggleRepeat();}
-  if(e.key==='m'||e.key==='M'){e.preventDefault();toggleMute();}
-  if(e.key==='1'){$('btn-load-audio').click();}
-  if(e.key==='2'){$('btn-load-lyrics').click();}
-  if(e.key==='e'||e.key==='E'){e.preventDefault();performExport(lastImportFormat, true);}
-  if(e.key==='f'||e.key==='F'){e.preventDefault();$('search-input').focus();}
-  if(e.key==='g'||e.key==='G'){e.preventDefault();$('tool-find-replace').click();}
-  if(e.key==='t'||e.key==='T'){e.preventDefault();$('tool-shift-time').click();}
-  if(e.key==='h'||e.key==='H'){e.preventDefault();$('btn-hotfix').click();}
-  if(e.key==='d'||e.key==='D'){e.preventDefault();setViewMode('default');}
-  if(e.key==='c'||e.key==='C'){e.preventDefault();setViewMode('compact');}
-  if(e.key==='k'||e.key==='K'){e.preventDefault();$('btn-shortcuts').click();}
-  if(e.key==='l'||e.key==='L'){e.preventDefault();$('btn-fullscreen').click();}
-  if(e.key==='n'||e.key==='N'){e.preventDefault(); insertBlankLine(lines.length);}
-  if(e.key==='Delete'){e.preventDefault(); $('btn-delete-selected').click();}
-  
-  // History
-  if((e.ctrlKey||e.metaKey)&&e.key==='z'&&!e.shiftKey){e.preventDefault();undo();}
-  if((e.ctrlKey||e.metaKey)&&(e.key==='y'||(e.key==='z'&&e.shiftKey))){e.preventDefault();redo();}
-  
-  // Volume
-  if((e.ctrlKey||e.metaKey)&&e.key==='ArrowUp'){e.preventDefault();setVolume(audio.volume + 0.1);}
-  if((e.ctrlKey||e.metaKey)&&e.key==='ArrowDown'){e.preventDefault();setVolume(audio.volume - 0.1);}
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
-  // Navigation & Seeking
-  if(!e.ctrlKey && !e.metaKey) {
-    if(e.key==='ArrowUp'){e.preventDefault();$('btn-prev-line').click();}
-    if(e.key==='ArrowDown'){e.preventDefault();$('btn-next-line').click();}
-    if(e.key==='ArrowLeft'){e.preventDefault();seekMs(Math.max(0, currentTime - 2000));}
-    if(e.key==='ArrowRight'){e.preventDefault();seekMs(Math.min(duration, currentTime + 2000));}
+  // 1. Handle specific Mod-key combinations first
+  if (isMod) {
+    // History
+    if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
+    if (e.key === 'y' || (e.key === 'z' && e.shiftKey)) { e.preventDefault(); redo(); return; }
+    
+    // Volume
+    if (e.key === 'ArrowUp') { e.preventDefault(); setVolume(audio.volume + 0.1); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setVolume(audio.volume - 0.1); return; }
+
+    // Nudge Time (Ctrl + [ / ])
+    if (e.key === '[' || e.key === '{') { e.preventDefault(); nudgeTime(-500); return; }
+    if (e.key === ']' || e.key === '}') { e.preventDefault(); nudgeTime(500); return; }
+
+    // IF NOT HANDLED ABOVE, EXIT AND LET BROWSER HANDLE IT (e.g. Ctrl+1, Ctrl+T, Ctrl+S)
+    return;
   }
 
-  // Global Time Shift (Nudge)
-  if(e.key==='[' || e.key==='{'){
-    e.preventDefault();
-    const shift = (e.ctrlKey || e.metaKey) ? 500 : 100;
-    lines.forEach(l=>{l.startMs=Math.max(0,l.startMs-shift);l.endMs=Math.max(0,l.endMs-shift);if(l.words)l.words.forEach(w=>{w.startMs=Math.max(0,w.startMs-shift);w.endMs=Math.max(0,w.endMs-shift);});});
-    pushHistory();renderTimeline();
-  }
-  if(e.key===']' || e.key==='}'){
-    e.preventDefault();
-    const shift = (e.ctrlKey || e.metaKey) ? 500 : 100;
-    lines.forEach(l=>{l.startMs+=shift;l.endMs+=shift;if(l.words)l.words.forEach(w=>{w.startMs+=shift;w.endMs+=shift;});});
-    pushHistory();renderTimeline();
+  // 2. Single-key shortcuts (No Mod keys pressed)
+  if (!e.shiftKey) {
+    // Playback
+    if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+    if (e.key === 's' || e.key === 'S') { e.preventDefault(); stopPlay(); }
+    if (e.key === 'r' || e.key === 'R') { e.preventDefault(); toggleRepeat(); }
+    if (e.key === 'm' || e.key === 'M') { e.preventDefault(); toggleMute(); }
+    if (e.key === '1') { $('btn-load-audio').click(); }
+    if (e.key === '2') { $('btn-load-lyrics').click(); }
+    if (e.key === 'e' || e.key === 'E') { e.preventDefault(); performExport(lastImportFormat, true); }
+    if (e.key === 'f' || e.key === 'F') { e.preventDefault(); $('search-input').focus(); }
+    if (e.key === 'g' || e.key === 'G') { e.preventDefault(); $('tool-find-replace').click(); }
+    if (e.key === 't' || e.key === 'T') { e.preventDefault(); $('tool-shift-time').click(); }
+    if (e.key === 'h' || e.key === 'H') { e.preventDefault(); $('btn-hotfix').click(); }
+    if (e.key === 'd' || e.key === 'D') { e.preventDefault(); setViewMode('default'); }
+    if (e.key === 'c' || e.key === 'C') { e.preventDefault(); setViewMode('compact'); }
+    if (e.key === 'k' || e.key === 'K') { e.preventDefault(); $('btn-shortcuts').click(); }
+    if (e.key === 'l' || e.key === 'L') { e.preventDefault(); $('btn-fullscreen').click(); }
+    if (e.key === 'n' || e.key === 'N') { e.preventDefault(); insertBlankLine(lines.length); }
+    if (e.key === 'Delete') { e.preventDefault(); $('btn-delete-selected').click(); }
+
+    // Navigation & Seeking
+    if (e.key === 'ArrowUp') { e.preventDefault(); $('btn-prev-line').click(); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); $('btn-next-line').click(); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); seekMs(Math.max(0, currentTime - 2000)); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); seekMs(Math.min(duration, currentTime + 2000)); }
+    
+    // Nudge Time (Single key [ / ])
+    if (e.key === '[' || e.key === '{') { e.preventDefault(); nudgeTime(-100); }
+    if (e.key === ']' || e.key === '}') { e.preventDefault(); nudgeTime(100); }
   }
 });
+
+function nudgeTime(ms) {
+    lines.forEach(l => { 
+        l.startMs = Math.max(0, l.startMs + ms); 
+        l.endMs = Math.max(0, l.endMs + ms); 
+        if (l.words) l.words.forEach(w => { 
+            w.startMs = Math.max(0, w.startMs + ms); 
+            w.endMs = Math.max(0, w.endMs + ms); 
+        }); 
+    });
+    pushHistory(); 
+    renderTimeline();
+}
 
 // ── Search ──
 $('search-input').oninput=e=>{
