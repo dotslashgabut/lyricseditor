@@ -597,17 +597,19 @@ setupDropdown('btn-export','export-menu');
 document.addEventListener('click',()=>document.querySelectorAll('.dropdown-menu.open').forEach(m=>m.classList.remove('open')));
 
 // ── Export ──
-function performExport(f) {
+function performExport(f, isQuick = false) {
   if(!f || !lines.length) return;
   
   // Prioritize word-level (karaoke) formats for Quick Export
   let targetFormat = f;
-  if (f === 'lrc') targetFormat = 'lrc_enhanced';
-  else if (f === 'vtt') targetFormat = 'vtt_karaoke';
-  else if (f === 'ttml') targetFormat = 'ttml_karaoke';
-  else if (['srv1', 'srv2', 'srv3'].includes(f)) targetFormat = 'srv3_karaoke';
-  else if (f === 'json') targetFormat = 'json3';
-  else if (f === 'txt') targetFormat = 'ttml_karaoke'; // Save work as TTML Karaoke if starting from TXT
+  if (isQuick) {
+    if (f === 'lrc') targetFormat = 'lrc_enhanced';
+    else if (f === 'vtt') targetFormat = 'vtt_karaoke';
+    else if (f === 'ttml') targetFormat = 'ttml_karaoke';
+    else if (['srv1', 'srv2', 'srv3'].includes(f)) targetFormat = 'srv3_karaoke';
+    else if (f === 'json') targetFormat = 'json3';
+    else if (f === 'txt') targetFormat = 'ttml_karaoke'; // Save work as TTML Karaoke if starting from TXT
+  }
 
   const autoEmpty = $('toggle-auto-empty-lines') ? $('toggle-auto-empty-lines').checked : true;
   const ext={lrc:'lrc',lrc_enhanced:'lrc',srt:'srt',vtt:'vtt',vtt_karaoke:'vtt',ttml:'ttml',ttml_karaoke:'ttml',srv1:'srv1',srv2:'srv2',srv3:'srv3',srv3_karaoke:'srv3',json:'json',json3:'json',lyricsfile:'lyricsfile',txt:'txt'}[targetFormat]||'txt';
@@ -618,7 +620,7 @@ function performExport(f) {
 $('export-menu').onclick=e=>{
   e.stopPropagation(); // Prevent closing when clicking non-item areas (like the toggle)
   const item=e.target.closest('.dropdown-item');if(!item)return;
-  performExport(item.dataset.format);
+  performExport(item.dataset.format, false); // Manual export: respect chosen format
   $('export-menu').classList.remove('open');
 };
 
@@ -875,7 +877,7 @@ window.addEventListener('keydown',e=>{
   if(e.key==='m'||e.key==='M'){e.preventDefault();toggleMute();}
   if(e.key==='1'){$('btn-load-audio').click();}
   if(e.key==='2'){$('btn-load-lyrics').click();}
-  if(e.key==='e'||e.key==='E'){e.preventDefault();performExport(lastImportFormat);}
+  if(e.key==='e'||e.key==='E'){e.preventDefault();performExport(lastImportFormat, true);}
   if(e.key==='f'||e.key==='F'){e.preventDefault();$('search-input').focus();}
   if(e.key==='g'||e.key==='G'){e.preventDefault();$('tool-find-replace').click();}
   if(e.key==='t'||e.key==='T'){e.preventDefault();$('tool-shift-time').click();}
