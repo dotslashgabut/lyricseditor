@@ -879,3 +879,30 @@ html, body {
         max-height: 200px;
     }
 }
+
+.placeholder-text {
+    height: 300px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    color: var(--text-muted);
+    font-size: 16px;
+    text-align: center;
+    line-height: 1.6;
+    border: 2px dashed transparent;
+    border-radius: 12px;
+    transition: all 0.3s ease;
+    user-select: none;
+}
+
+#timeline-container.drag-over {
+    border-color: var(--accent);
+    background: rgba(100, 108, 255, 0.05);
+    color: var(--accent);
+}
+
+#timeline-container.drag-over .placeholder-text {
+    transform: scale(1.02);
+    color: var(--accent);
+}

@@ -169,7 +169,15 @@ function updateFileUI() {
 // ── Render ──
 function renderTimeline() {
   container.innerHTML = '';
-  if(!lines.length){container.innerHTML='<div class="placeholder-text">Load audio and lyrics to start editing</div>';statL.textContent=0;statW.textContent=0;return;}
+  if(!lines.length){
+    container.innerHTML=`
+      <div class="placeholder-text">
+        <i class="fas fa-cloud-upload-alt" style="font-size: 32px; margin-bottom: 12px; opacity: 0.5;"></i><br>
+        Load audio and lyrics to start editing<br>
+        <span style="font-size:12px; opacity:0.7;">(or Drag & Drop files anywhere)</span>
+      </div>`;
+    statL.textContent=0;statW.textContent=0;return;
+  }
   let tw=0;
   
   container.appendChild(createAddLineBtn(0));
@@ -1005,6 +1013,41 @@ document.addEventListener('fullscreenchange', () => {
         $('btn-fullscreen').innerHTML = '<i class="fas fa-expand"></i>';
     } else {
         $('btn-fullscreen').innerHTML = '<i class="fas fa-compress"></i>';
+    }
+});
+
+// ── Drag & Drop ──
+document.addEventListener('dragover', e => {
+    e.preventDefault();
+    if (!lines.length) container.classList.add('drag-over');
+});
+document.addEventListener('dragleave', e => {
+    container.classList.remove('drag-over');
+});
+document.addEventListener('drop', e => {
+    e.preventDefault();
+    container.classList.remove('drag-over');
+    const files = e.dataTransfer.files;
+    if (!files.length) return;
+
+    for (const f of files) {
+        const type = f.type;
+        const ext = f.name.split('.').pop().toLowerCase();
+        
+        // Audio types
+        if (type.startsWith('audio/') || ['mp3', 'wav', 'ogg', 'flac', 'm4a'].includes(ext)) {
+            if (audioFullname && !confirm(`An audio file (${audioFullname}) is already loaded. Replace it?`)) {
+                continue;
+            }
+            handleAudioFile(f);
+        } 
+        // Lyrics types
+        else if (['lrc', 'srt', 'vtt', 'ttml', 'xml', 'json', 'txt', 'lyricsfile', 'srv1', 'srv2', 'srv3'].includes(ext)) {
+            if (lyricsFullname && !confirm(`A lyrics file (${lyricsFullname}) is already loaded. Replace it?`)) {
+                continue;
+            }
+            handleLyricsFile(f);
+        }
     }
 });
 
