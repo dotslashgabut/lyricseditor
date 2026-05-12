@@ -29,6 +29,13 @@ async function clearDB() {
     const tx = db.transaction(DB_STORE, 'readwrite');
     tx.objectStore(DB_STORE).clear();
 }
+async function deleteFileFromDB(key) {
+    try {
+        const db = await openDB();
+        const tx = db.transaction(DB_STORE, 'readwrite');
+        tx.objectStore(DB_STORE).delete(key);
+    } catch(e) { console.error("DB Delete Failed", e); }
+}
 
 // ── Global State ──
 let audio = new Audio(), lines = [], isPlaying = false, isRepeat = false;
@@ -168,17 +175,28 @@ function updateFileUI() {
 
 // ── Render ──
 function renderTimeline() {
+  // Capture currently selected IDs before clearing
+  const previouslySelected = new Set();
+  document.querySelectorAll('.line-checkbox:checked').forEach(cb => {
+    const tr = cb.closest('.timeline-track');
+    if (tr) previouslySelected.add(parseInt(tr.id.replace('tc-', '')));
+  });
+
   container.innerHTML = '';
   if(!lines.length){
+    // ... (placeholder code)
     container.innerHTML=`
       <div class="placeholder-text">
         <i class="fas fa-cloud-upload-alt" style="font-size: 32px; margin-bottom: 12px; opacity: 0.5;"></i><br>
         Load audio and lyrics to start editing<br>
         <span style="font-size:12px; opacity:0.7;">(or Drag & Drop files anywhere)</span>
+        <div style="margin-top: 15px; font-size: 12px; font-weight: 500; color: var(--accent); opacity: 0.8;">
+            <i class="fas fa-hand-pointer"></i> Drag words or boundaries to adjust timings
+        </div>
         <div style="margin-top: 20px; font-size: 11px; opacity: 0.6; max-width: 400px; line-height: 1.5; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
             <strong>Pro Tip for High Precision:</strong><br>
             Use <b>WAV</b> or <b>FLAC</b> for sample-accurate sync. MP3 files may have slight timing offsets. 
-            If audio feels off, use <b>[</b> or <b>]</b> to nudge all timings.
+            If audio feels off, use the <b>[</b> or <b>]</b> buttons/keys to nudge all timings.
         </div>
       </div>`;
     statL.textContent=0;statW.textContent=0;return;
@@ -193,7 +211,8 @@ function renderTimeline() {
     const ld = Math.max(0.05, (line.endMs - line.startMs)/1000);
     const tr = document.createElement('div');
     tr.className='timeline-track'; tr.id=`tc-${line.id}`;
-    tr.innerHTML=`<div class="track-controls"><input type="checkbox" class="line-checkbox" data-id="${line.id}" style="cursor:pointer; margin-right:4px;" title="Select this line"><span style="color:var(--text-muted);font-size:11px;width:14px">${idx+1}</span><button class="track-play-btn" data-start="${line.startMs}" data-end="${line.endMs}"><i class="fas fa-play" style="font-size:9px;margin-left:1px"></i></button><div class="track-info">${fmt(line.startMs/1000)}</div></div><div class="track-content" id="trk-${line.id}"><div class="playback-indicator" id="pi-${line.id}"></div></div><div class="track-end-time">${fmt(line.endMs/1000)}</div><button class="icon-btn track-edit-btn" title="Edit Line Text"><i class="fas fa-edit"></i></button><button class="icon-btn track-delete-btn" title="Delete Line"><i class="fas fa-trash"></i></button>`;
+    const isChecked = previouslySelected.has(line.id);
+    tr.innerHTML=`<div class="track-controls"><input type="checkbox" class="line-checkbox" data-id="${line.id}" ${isChecked ? 'checked' : ''} style="cursor:pointer; margin-right:4px;" title="Select this line"><span style="color:var(--text-muted);font-size:11px;width:14px">${idx+1}</span><button class="track-play-btn" data-start="${line.startMs}" data-end="${line.endMs}"><i class="fas fa-play" style="font-size:9px;margin-left:1px"></i></button><div class="track-info">${fmt(line.startMs/1000)}</div></div><div class="track-content" id="trk-${line.id}"><div class="playback-indicator" id="pi-${line.id}"></div></div><div class="track-end-time">${fmt(line.endMs/1000)}</div><button class="icon-btn track-edit-btn" title="Edit Line Text"><i class="fas fa-edit"></i></button><button class="icon-btn track-delete-btn" title="Delete Line"><i class="fas fa-trash"></i></button>`;
     container.appendChild(tr);
     const tc = tr.querySelector('.track-content');
     const ws = (line.words && line.words.length > 0) ? line.words : [{ id: `pl-${line.id}`, text: (line.text || "").trim() || "[Empty]", startMs: line.startMs, endMs: line.endMs, isPl: true }];
@@ -205,7 +224,14 @@ function renderTimeline() {
       posWord(el, w, line);
       bindDrag(el, w, line, tc, w.isPl);
     });
-    tr.querySelector('.track-play-btn').onclick = () => { seekMs(line.startMs); if(!isPlaying)togglePlay(); };
+    tr.querySelector('.track-play-btn').onclick = () => {
+      if (activeLineId === line.id && isPlaying) {
+        stopPlay();
+      } else {
+        seekMs(line.startMs);
+        if(!isPlaying) togglePlay();
+      }
+    };
     tr.querySelector('.track-delete-btn').onclick = () => { lines=lines.filter(l=>l.id!==line.id); pushHistory(); renderTimeline(); };
     tr.querySelector('.track-edit-btn').onclick = () => {
       editingLine = line;
@@ -218,7 +244,15 @@ function renderTimeline() {
   });
   statL.textContent=lines.length; statW.textContent=tw;
   updateDisplay();
+  updateSelectionCount();
 }
+
+// Global click listener for timeline tracks
+container.onclick = (e) => {
+    if (e.target.classList.contains('line-checkbox')) {
+        updateSelectionCount();
+    }
+};
 
 function createAddLineBtn(idx) {
   const wr = document.createElement('div');
@@ -394,14 +428,22 @@ function updateDisplay(){
   const cs=currentTime/1000, ds=duration/1000;
   timeDisp.textContent=`${fmt(cs)} / ${fmt(ds)}`;
   progFill.style.width=duration>0?(currentTime/duration*100)+'%':'0%';
-  activeLineId=null;
+  
+  let newActiveLineId = null;
   lines.forEach(line=>{
     const te=$(`tc-${line.id}`), pi=$(`pi-${line.id}`);
     if(!te)return;
+    
     if(currentTime>=line.startMs&&currentTime<line.endMs){
-      activeLineId=line.id;
-      if(!te.classList.contains('active')){te.classList.add('active');if(isPlaying)te.scrollIntoView({behavior:'smooth',block:'nearest'});}
-      if(pi){pi.style.display='block';pi.style.left=((currentTime-line.startMs)/(line.endMs-line.startMs)*100)+'%';}
+      newActiveLineId=line.id;
+      if(!te.classList.contains('active')){
+          te.classList.add('active');
+          if(isPlaying) te.scrollIntoView({behavior:'smooth',block:'nearest'});
+      }
+      if(pi){
+          pi.style.display='block';
+          pi.style.left=((currentTime-line.startMs)/(line.endMs-line.startMs)*100)+'%';
+      }
       if(line.words){
         line.words.forEach(w=>{
           const we=$(`w-${w.id}`);
@@ -420,6 +462,25 @@ function updateDisplay(){
           if(we) we.classList.remove('active');
         });
       }
+    }
+  });
+  
+  activeLineId = newActiveLineId;
+
+  // Update all track play buttons
+  document.querySelectorAll('.track-play-btn').forEach(btn => {
+    const tr = btn.closest('.timeline-track');
+    const lineId = tr ? parseInt(tr.id.replace('tc-', '')) : null;
+    const icon = btn.querySelector('i');
+    
+    if (lineId === activeLineId && isPlaying) {
+      icon.className = 'fas fa-stop';
+      icon.style.fontSize = '9px';
+      icon.style.marginLeft = '0';
+    } else {
+      icon.className = 'fas fa-play';
+      icon.style.fontSize = '9px';
+      icon.style.marginLeft = '1px';
     }
   });
 }
@@ -495,6 +556,11 @@ function handleAudioFile(f, isRestore = false) {
     
     if (!isRestore) {
         audioFilename = f.name.replace(/\.[^/.]+$/, "");
+        originalFilename = audioFilename; // Audio always takes priority for naming
+        audioFullname = f.name;
+    } else if (!audioFilename) {
+        // Safety for restore if session string data was lost but DB file exists
+        audioFilename = f.name.replace(/\.[^/.]+$/, "");
         originalFilename = audioFilename;
         audioFullname = f.name;
     }
@@ -559,10 +625,14 @@ function handleLyricsFile(f) {
   lastLyricsFile = f;
   saveFileToDB('lastLyrics', f); // Persist to DB
   stopPlay();
-  lyricsFilename = f.name.replace(/\.[^/.]+$/, "");
-  if(!audioFilename) originalFilename = lyricsFilename;
-  
   lyricsFullname = f.name;
+  lyricsFilename = f.name.replace(/\.[^/.]+$/, "");
+  
+  // Update name if no audio is present or if we are using the default "lyrics" name
+  if (!audioFilename || originalFilename === 'lyrics') {
+      originalFilename = lyricsFilename;
+  }
+  
   updateFileUI();
 
   const r=new FileReader();
@@ -616,9 +686,19 @@ function performExport(f, isQuick = false) {
     else if (f === 'txt') targetFormat = 'ttml_karaoke'; // Save work as TTML Karaoke if starting from TXT
   }
 
-  const autoEmpty = $('toggle-auto-empty-lines') ? $('toggle-auto-empty-lines').checked : true;
+  // Only use autoEmpty if it's a manual export and the toggle is checked.
+  // For Quick Export, we want it to match exactly what's in the editor.
+  const autoEmpty = isQuick ? false : ($('toggle-auto-empty-lines') ? $('toggle-auto-empty-lines').checked : false);
   const ext={lrc:'lrc',lrc_enhanced:'lrc',srt:'srt',vtt:'vtt',vtt_karaoke:'vtt',ttml:'ttml',ttml_karaoke:'ttml',srv1:'srv1',srv2:'srv2',srv3:'srv3',srv3_karaoke:'srv3',json:'json',json3:'json',lyricsfile:'lyricsfile',txt:'txt'}[targetFormat]||'txt';
-  const name = originalFilename + " - lyricseditor." + ext;
+  
+  let finalBaseName = originalFilename;
+  if (audioFilename && lyricsFilename && audioFilename !== lyricsFilename) {
+      finalBaseName = `${audioFilename} - ${lyricsFilename}`;
+  } else {
+      finalBaseName = audioFilename || lyricsFilename || "lyrics";
+  }
+
+  const name = `${finalBaseName} - lyricseditor.${ext}`;
   downloadFile(exportAs(lines.map(l=>({startMs:l.startMs,endMs:l.endMs,text:l.text,words:l.words})), targetFormat, duration, { autoEmptyLines: autoEmpty }), name);
 }
 
@@ -775,7 +855,7 @@ $('shift-plus-100').onclick=()=>$('shift-amount').value=parseInt($('shift-amount
 $('shift-plus-500').onclick=()=>$('shift-amount').value=parseInt($('shift-amount').value||0)+500;
 $('shift-cancel').onclick=()=>$('shift-modal').style.display='none';
 $('shift-apply').onclick=()=>{
-  const ms=parseInt($('shift-amount').value)||0;
+const ms=parseInt($('shift-amount').value)||0;
   const checks = document.querySelectorAll('.line-checkbox:checked');
   const selectedIds = Array.from(checks).map(c => parseInt(c.dataset.id));
   const targetLines = selectedIds.length ? lines.filter(l => selectedIds.includes(l.id)) : lines;
@@ -783,10 +863,33 @@ $('shift-apply').onclick=()=>{
   pushHistory();renderTimeline();$('shift-modal').style.display='none';
 };
 
-$('check-all-lines').onchange = (e) => {
+// ── Selection Logic ──
+$('check-all-lines').onclick = (e) => {
     const checked = e.target.checked;
     document.querySelectorAll('.line-checkbox').forEach(cb => cb.checked = checked);
+    updateSelectionCount();
 };
+
+function updateSelectionCount() {
+    const cbs = document.querySelectorAll('.line-checkbox');
+    const checked = document.querySelectorAll('.line-checkbox:checked');
+    const master = $('check-all-lines');
+    const label = master.parentElement.querySelector('span') || master.nextSibling;
+    
+    if (checked.length === 0) {
+        master.checked = false;
+        master.indeterminate = false;
+        if (label) label.textContent = "Select All / None";
+    } else if (checked.length === cbs.length) {
+        master.checked = true;
+        master.indeterminate = false;
+        if (label) label.textContent = `Select All / None (${checked.length})`;
+    } else {
+        master.checked = false;
+        master.indeterminate = true;
+        if (label) label.textContent = `Select All / None (${checked.length})`;
+    }
+}
 
 // ── Find & Replace Modal ──
 $('fr-cancel').onclick=()=>$('find-replace-modal').style.display='none';
@@ -855,8 +958,34 @@ $('btn-toggle-highlight').onclick = () => {
 };
 
 // ── Prev/Next Line ──
-$('btn-prev-line').onclick=()=>{if(!lines.length)return;let activeIdx=-1;for(let i=0;i<lines.length;i++){if(lines[i].startMs<=currentTime+50)activeIdx=i;else break;}let targetIdx=activeIdx-1;if(targetIdx<0)targetIdx=0;seekMs(lines[targetIdx].startMs);};
-$('btn-next-line').onclick=()=>{if(!lines.length)return;const next=lines.find(l=>l.startMs>currentTime+50);if(next)seekMs(next.startMs);};
+function centerActiveLine() {
+    const active = document.querySelector('.timeline-track.active');
+    if (active) {
+        active.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+}
+
+$('btn-prev-line').onclick=()=>{
+    if(!lines.length) return;
+    let activeIdx=-1;
+    for(let i=0;i<lines.length;i++){
+        if(lines[i].startMs <= currentTime + 50) activeIdx=i;
+        else break;
+    }
+    let targetIdx = activeIdx - 1;
+    if(targetIdx < 0) targetIdx = 0;
+    seekMs(lines[targetIdx].startMs);
+    setTimeout(centerActiveLine, 50); // Small delay to ensure render is updated
+};
+
+$('btn-next-line').onclick=()=>{
+    if(!lines.length) return;
+    const next = lines.find(l => l.startMs > currentTime + 50);
+    if(next) {
+        seekMs(next.startMs);
+        setTimeout(centerActiveLine, 50);
+    }
+};
 
 // ── Keyboard Shortcuts ──
 window.addEventListener('keydown', e => {
@@ -928,8 +1057,30 @@ window.addEventListener('keydown', e => {
   }
 });
 
+$('btn-nudge-back').onclick = () => {
+    const amt = parseInt($('nudge-amount').value) || 100;
+    nudgeTime(-amt);
+};
+$('btn-nudge-forward').onclick = () => {
+    const amt = parseInt($('nudge-amount').value) || 100;
+    nudgeTime(amt);
+};
+
 function nudgeTime(ms) {
-    lines.forEach(l => { 
+    if (!lines.length) return;
+    
+    // Check if there are any selected lines
+    const selectedIds = new Set();
+    document.querySelectorAll('.line-checkbox:checked').forEach(cb => {
+        const id = parseInt(cb.closest('.timeline-track').id.replace('tc-', ''));
+        selectedIds.add(id);
+    });
+
+    const targetLines = selectedIds.size > 0 
+        ? lines.filter(l => selectedIds.has(l.id)) 
+        : lines;
+
+    targetLines.forEach(l => { 
         l.startMs = Math.max(0, l.startMs + ms); 
         l.endMs = Math.max(0, l.endMs + ms); 
         if (l.words) l.words.forEach(w => { 
@@ -937,6 +1088,7 @@ function nudgeTime(ms) {
             w.endMs = Math.max(0, w.endMs + ms); 
         }); 
     });
+    
     pushHistory(); 
     renderTimeline();
 }
@@ -944,9 +1096,17 @@ function nudgeTime(ms) {
 // ── Search ──
 $('search-input').oninput=e=>{
   const q=e.target.value.toLowerCase();
+  $('search-clear').style.display = q ? 'block' : 'none';
   document.querySelectorAll('.timeline-track').forEach(t=>{t.style.display='';});
   if(!q)return;
   lines.forEach(l=>{const el=$(`tc-${l.id}`);if(el&&!l.text.toLowerCase().includes(q))el.style.display='none';});
+};
+
+$('search-clear').onclick = () => {
+    $('search-input').value = '';
+    $('search-clear').style.display = 'none';
+    document.querySelectorAll('.timeline-track').forEach(t => { t.style.display = ''; });
+    $('search-input').focus();
 };
 
 // ── Fullscreen ──
@@ -971,15 +1131,14 @@ $('btn-remove-audio').onclick = (e) => {
     e.stopPropagation();
     if (confirm("Remove current audio source?")) {
         stopPlay();
-        // We don't revoke here so Undo can restore it, 
-        // revocation will happen when a NEW file is loaded or browser closed.
         audio.removeAttribute('src');
         audio.load();
         audioFilename = "";
         audioFullname = "";
-        $('input-audio').value = ""; // Clear input to allow re-selection
+        // Keep lastAudioFile in memory and DB so the reload button works
+        originalFilename = lyricsFilename || "lyrics";
+        $('input-audio').value = "";
         updateFileUI();
-        // Keep duration if lyrics exist, or reset
         if(!lines.length) duration = 0;
         pushHistory();
         updateDisplay();
@@ -1001,7 +1160,9 @@ $('btn-remove-lyrics').onclick = (e) => {
         lines = [];
         lyricsFilename = "";
         lyricsFullname = "";
-        $('input-lyrics').value = ""; // Clear input to allow re-selection
+        // Keep lastLyricsFile in memory and DB so the reload button works
+        originalFilename = audioFilename || "lyrics";
+        $('input-lyrics').value = "";
         updateFileUI();
         pushHistory();
         renderTimeline();
@@ -1060,45 +1221,70 @@ document.addEventListener('dragleave', e => {
 document.addEventListener('drop', e => {
     e.preventDefault();
     container.classList.remove('drag-over');
-    const files = e.dataTransfer.files;
+    const files = Array.from(e.dataTransfer.files);
     if (!files.length) return;
 
+    let audioToLoad = null, audioCount = 0;
+    let lyricsToLoad = null, lyricsCount = 0;
+
+    const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'webm', 'mp4'];
+    const lyricsExts = ['lrc', 'srt', 'vtt', 'txt', 'json', 'xml', 'ttml', 'lyricsfile', 'srv1', 'srv2', 'srv3'];
+
     for (const f of files) {
-        const type = f.type;
         const ext = f.name.split('.').pop().toLowerCase();
-        
-        // Audio types
-        if (type.startsWith('audio/') || ['mp3', 'wav', 'ogg', 'flac', 'm4a'].includes(ext)) {
-            if (audioFullname && !confirm(`An audio file (${audioFullname}) is already loaded. Replace it?`)) {
-                continue;
-            }
-            handleAudioFile(f);
-        } 
-        // Lyrics types
-        else if (['lrc', 'srt', 'vtt', 'ttml', 'xml', 'json', 'txt', 'lyricsfile', 'srv1', 'srv2', 'srv3'].includes(ext)) {
-            if (lyricsFullname && !confirm(`A lyrics file (${lyricsFullname}) is already loaded. Replace it?`)) {
-                continue;
-            }
-            handleLyricsFile(f);
+        if (f.type.startsWith('audio/') || f.type.startsWith('video/') || audioExts.includes(ext)) {
+            audioCount++; audioToLoad = f;
+        } else if (lyricsExts.includes(ext)) {
+            lyricsCount++; lyricsToLoad = f;
+        }
+    }
+
+    if (audioCount > 1 || lyricsCount > 1) {
+        alert("Too many files! Please drop only 1 audio and/or 1 lyrics file at a time.");
+        return;
+    }
+
+    if (audioToLoad) {
+        if (audioFullname && !confirm(`An audio file (${audioFullname}) is already loaded. Replace it?`)) {
+            // User cancelled
+        } else {
+            handleAudioFile(audioToLoad);
+        }
+    }
+
+    if (lyricsToLoad) {
+        if (lyricsFullname && !confirm(`A lyrics file (${lyricsFullname}) is already loaded. Replace it?`)) {
+            // User cancelled
+        } else {
+            handleLyricsFile(lyricsToLoad);
         }
     }
 });
 
 // ── Init ──
 (async function init() {
-    loadSession(); // Load text/metadata immediately (very fast)
+    loadSession(); // Load text/metadata (very fast)
     updateFileUI();
     renderTimeline();
     updateDisplay();
 
-    // Load large binary files in the background
+    // Load file references from DB to keep the Reload button functional
     getFileFromDB('lastLyrics').then(file => {
-        if (file) lastLyricsFile = file;
+        if (file) {
+            lastLyricsFile = file;
+            updateFileUI(); // Show reload icon if lyrics are missing in UI
+        }
     });
 
     getFileFromDB('lastAudio').then(file => {
         if (file) {
-            handleAudioFile(file, true); // Restore without resetting session
+            lastAudioFile = file;
+            // ONLY auto-load if the session says it was active
+            if (audioFullname) {
+                handleAudioFile(file, true); 
+            } else {
+                updateFileUI(); // Show reload icon
+            }
         }
     });
 })();

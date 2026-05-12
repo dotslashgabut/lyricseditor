@@ -53,8 +53,8 @@ A professional-grade, browser-based word-level lyrics and subtitle editor. Desig
 
 | | |
 |:-:|:-:|
-| ![screenshot1](https://github.com/user-attachments/assets/bdc05f9b-5d63-464c-966e-b440eccce166) | ![screenshot2](https://github.com/user-attachments/assets/1ac77c60-175b-404c-9698-8a71ed7d1aae) |
-| ![screenshot3](https://github.com/user-attachments/assets/d91f445b-a18e-4749-be22-81aaf0758550) | ![screenshot4](https://github.com/user-attachments/assets/fe32827a-6f2c-423c-b252-c4703f0537d9) |
+| ![screenshot1](https://github.com/user-attachments/assets/702b5201-a5ec-46b4-b5d1-4ae86ab47761) | ![screenshot2](https://github.com/user-attachments/assets/82583a9a-a04c-45de-bad5-d7efea0b9929) |
+| ![screenshot3](https://github.com/user-attachments/assets/ade078b0-a961-469c-a319-0e526cfc9854) | ![screenshot4](https://github.com/user-attachments/assets/d506e9bf-3961-4de9-a63a-6d4e908e7957) |
 
 https://github.com/user-attachments/assets/2eed0d00-c213-4737-b9e3-c4cf02fc6884
 
@@ -79,41 +79,61 @@ https://github.com/user-attachments/assets/2eed0d00-c213-4737-b9e3-c4cf02fc6884
 
 For professional, high-precision work, please consider the following:
 
-- **Format Choice**: Use **WAV** or **FLAC** whenever possible. These formats are sample-accurate.
-- **MP3 Limitations**: Standard MP3 files often contain "encoder padding" (silence) at the beginning, which can cause a slight offset (20ms - 100ms) between the audio and your lyrics.
-- **Global Nudge**: If your audio feels consistently off-sync with the lyrics, use the **`[`** and **`]`** keys to shift all timings backward or forward by 100ms increments. Use **`Ctrl + [` / `]`** for 500ms shifts.
+- **Format Choice**: Use **WAV** or **FLAC** whenever possible for sample-accurate synchronization.
+- **MP3 Limitations**: Standard MP3s may have encoder padding (silence) at the start, causing offsets.
+- **Global & Partial Shift**: Use the **`[`** and **`]`** keys (or the UI buttons) to shift timings. If lines are selected, only those will be shifted.
+- **Flexible Step**: Adjust the millisecond value in the shift input to control how much time is shifted per click.
 
 ## ⌨️ Keyboard Shortcuts
 
+### Playback & Volume
 | Shortcut | Action |
 | :--- | :--- |
-| `1` | Load Audio File |
-| `2` | Load Lyrics File |
-| `Space` | Play / Pause |
-| `S` | Stop |
-| `N` | Add New Line |
-| `Delete` | Delete Selected Lines |
-| `R` | Toggle Repeat (Loop current line) |
-| `M` | Mute / Unmute |
-| `E` | Quick Export (prioritizes word-level/karaoke formats) |
-| `F` | Focus Search Box |
-| `G` | Find & Replace |
-| `T` | Shift Time... |
-| `K` | Keyboard Shortcuts Info |
-| `L` | Toggle Fullscreen |
-| `Esc` | Close Modal / Blur Search |
-| `H` | Hot Fix (Cleanup lyrics) |
-| `D` | Default View Mode |
-| `C` | Compact View Mode |
-| `Up` / `Down` | Jump to Previous / Next Line |
-| `Left` / `Right` | Seek Backward / Forward (2 seconds) |
-| `Ctrl/Cmd + Up` / `Down` | Volume Up / Down |
-| `Ctrl/Cmd + Z` | Undo |
-| `Ctrl/Cmd + Shift + Z` / `Y` | Redo |
-| `[` / `{` | Shift Time -100ms |
-| `]` / `}` | Shift Time +100ms |
-| `Ctrl/Cmd + [` | Shift Time -500ms |
-| `Ctrl/Cmd + ]` | Shift Time +500ms |
+| **Space** | Play / Pause Audio |
+| **S** | Stop Audio (Reset to start) |
+| **R** | Toggle Line Repeat (Loop current line) |
+| **M** | Mute / Unmute Audio |
+| **Ctrl + Up / Down** | Increase / Decrease Volume |
+| **Left / Right** | Seek Audio (-2s / +2s) |
+
+### Editing & Selection
+| Shortcut | Action |
+| :--- | :--- |
+| **N** | Insert New Blank Line |
+| **Delete** | Delete Selected Lines |
+| **Up / Down** | Select Previous / Next Line |
+| **Ctrl + Z / Y** | Undo / Redo Changes |
+| **[ / ]** | Shift Time Backward / Forward (100ms) |
+| **Ctrl + [ / ]** | Shift Time (Large Step: 500ms) |
+
+### Tools & UI
+| Shortcut | Action |
+| :--- | :--- |
+| **1 / 2** | Load Audio / Load Lyrics |
+| **E** | **Quick Export** (Prioritizes Word-Level/Karaoke formats) |
+| **F** | Focus Search Box |
+| **G** | Open Find & Replace |
+| **T** | Open Global Time Shift modal |
+| **H** | **Hot Fix** (One-click cleanup: compact, remove empty, fill gaps) |
+| **D / C** | Default View / Compact View Mode |
+| **L** | Toggle Fullscreen |
+| **K** | Open Keyboard Shortcuts help |
+| **Esc** | Close Modals / Clear Search focus |
+
+## 🌟 What's New
+
+- **Flexible Shift Control**: Added a new UI widget to shift time by custom millisecond amounts. Now supports shifting only selected lines or the whole timeline.
+- **Improved Search UI**: Moved the search box to the timeline header for better focus. Added a minimal "x" button to clear filters instantly.
+- **Safe Drag & Drop**: Refined the loading logic to prevent accidental file overwrites and limit drops to 1 audio + 1 lyrics file at a time.
+- **Selection Feedback**: Added a live count of selected lines to the "Select All" label and implemented the indeterminate checkbox state.
+- **Tablet-First Optimization**: Increased the mobile breakpoint to `1024px` to provide full "Icon-Only" support for iPad Air, iPad Pro (portrait), Surface Pro, and other mid-sized tablets.
+- **Branded Logo Integration**: Replaced generic icons with the official `favicon.svg`, featuring a premium orange glow effect for better brand identity.
+- **Global Icon-Only Mode**: Extended the smart icon transformation to the primary **Export** button and **App Logo**, ensuring zero layout overflow on narrow screens.
+- **Zero-Overflow Header**: Grouped filenames and navigation controls ergonomically. Implemented thumb-friendly top-row navigation for arrows and dynamic filename widths (200px on desktop, 100px on mobile).
+- **Track-Level Play/Stop Toggle**: Play buttons in the timeline rows now act as dynamic toggles (switching to a Stop icon when active) for faster playback control.
+- **Auto-Scroll Navigation**: The Up/Down navigation buttons now automatically scroll and center the active lyrics line in view, even when paused.
+- **UI structural Integrity**: Wrapped all button labels in spans to ensure robust responsive behavior and clean layout resets.
+- **UI Polish**: Added "Pro Tips" for audio precision and improved the placeholder instructions for new users.
 
 ---
 
