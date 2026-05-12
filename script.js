@@ -204,7 +204,7 @@ function renderTimeline() {
     tr.querySelector('.track-delete-btn').onclick = () => { lines=lines.filter(l=>l.id!==line.id); pushHistory(); renderTimeline(); };
     tr.querySelector('.track-edit-btn').onclick = () => {
       editingLine = line;
-      $('edit-text-input').value = line.text;
+      $('edit-text-input').value = line.text.replace(/\s+/g, ' ').trim();
       $('edit-text-modal').style.display = 'flex';
       $('edit-text-input').focus();
     };
@@ -599,10 +599,20 @@ document.addEventListener('click',()=>document.querySelectorAll('.dropdown-menu.
 // ── Export ──
 function performExport(f) {
   if(!f || !lines.length) return;
+  
+  // Prioritize word-level (karaoke) formats for Quick Export
+  let targetFormat = f;
+  if (f === 'lrc') targetFormat = 'lrc_enhanced';
+  else if (f === 'vtt') targetFormat = 'vtt_karaoke';
+  else if (f === 'ttml') targetFormat = 'ttml_karaoke';
+  else if (['srv1', 'srv2', 'srv3'].includes(f)) targetFormat = 'srv3_karaoke';
+  else if (f === 'json') targetFormat = 'json3';
+  else if (f === 'txt') targetFormat = 'ttml_karaoke'; // Save work as TTML Karaoke if starting from TXT
+
   const autoEmpty = $('toggle-auto-empty-lines') ? $('toggle-auto-empty-lines').checked : true;
-  const ext={lrc:'lrc',lrc_enhanced:'lrc',srt:'srt',vtt:'vtt',vtt_karaoke:'vtt',ttml:'ttml',ttml_karaoke:'ttml',srv1:'srv1',srv2:'srv2',srv3:'srv3',srv3_karaoke:'srv3',json:'json',json3:'json',lyricsfile:'lyricsfile',txt:'txt'}[f]||'txt';
+  const ext={lrc:'lrc',lrc_enhanced:'lrc',srt:'srt',vtt:'vtt',vtt_karaoke:'vtt',ttml:'ttml',ttml_karaoke:'ttml',srv1:'srv1',srv2:'srv2',srv3:'srv3',srv3_karaoke:'srv3',json:'json',json3:'json',lyricsfile:'lyricsfile',txt:'txt'}[targetFormat]||'txt';
   const name = originalFilename + " - lyricseditor." + ext;
-  downloadFile(exportAs(lines.map(l=>({startMs:l.startMs,endMs:l.endMs,text:l.text,words:l.words})), f, duration, { autoEmptyLines: autoEmpty }), name);
+  downloadFile(exportAs(lines.map(l=>({startMs:l.startMs,endMs:l.endMs,text:l.text,words:l.words})), targetFormat, duration, { autoEmptyLines: autoEmpty }), name);
 }
 
 $('export-menu').onclick=e=>{

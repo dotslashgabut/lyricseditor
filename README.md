@@ -36,10 +36,13 @@ A professional-grade, browser-based word-level lyrics and subtitle editor. Desig
     - Compact and Default view modes.
     - Fullscreen support.
 - **Workspace Management**:
+    - **Drag & Drop**: Seamlessly load audio or lyrics files by dragging them anywhere into the editor.
     - **Add New Line**: Quick insertion button directly in the timeline header.
-    - **Clear All**: One-click cleanup to start a new project from scratch.
+    - **Delete Selected**: Mass-deletion of checked lines for faster cleanup.
+    - **Clear All**: One-click cleanup to reset the entire timeline.
     - **Asset Eject/Reload**: Easily remove or re-load audio and lyrics files.
     - **Smart Tooltips**: Full filename display on hover for easy identification.
+    - **Improved Line Editing**: Automatic whitespace and newline normalization when editing text to ensure a clean, one-line structure.
 - **Session Persistence**:
     - **Auto-Save**: Progress is automatically saved to local storage.
     - **True Persistence**: Uses **IndexedDB** to store audio and lyrics references, allowing for instant project restoration even after a page refresh (F5) without re-browsing files.
@@ -50,7 +53,7 @@ A professional-grade, browser-based word-level lyrics and subtitle editor. Desig
 
 | | |
 |:-:|:-:|
-| ![screenshot1](https://github.com/user-attachments/assets/7ae9d525-5c3c-4802-afb1-597af0ce1249) | ![screenshot2](https://github.com/user-attachments/assets/1ac77c60-175b-404c-9698-8a71ed7d1aae) |
+| ![screenshot1](https://github.com/user-attachments/assets/bdc05f9b-5d63-464c-966e-b440eccce166) | ![screenshot2](https://github.com/user-attachments/assets/1ac77c60-175b-404c-9698-8a71ed7d1aae) |
 | ![screenshot3](https://github.com/user-attachments/assets/d91f445b-a18e-4749-be22-81aaf0758550) | ![screenshot4](https://github.com/user-attachments/assets/fe32827a-6f2c-423c-b252-c4703f0537d9) |
 
 https://github.com/user-attachments/assets/2eed0d00-c213-4737-b9e3-c4cf02fc6884
@@ -84,7 +87,7 @@ https://github.com/user-attachments/assets/2eed0d00-c213-4737-b9e3-c4cf02fc6884
 | `Delete` | Delete Selected Lines |
 | `R` | Toggle Repeat (Loop current line) |
 | `M` | Mute / Unmute |
-| `E` | Quick Export (uses same format as imported) |
+| `E` | Quick Export (prioritizes word-level/karaoke formats) |
 | `F` | Focus Search Box |
 | `G` | Find & Replace |
 | `T` | Shift Time... |
