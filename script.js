@@ -1223,14 +1223,32 @@ function applySmartMergeFromCues(refCues, refFormat) {
     const refText = refCue.text.trim();
     let lineWords = [];
 
-    if (isTimestampBased) {
+    // Smart logic: prioritize text phrasing if the reference cue has text.
+    // This avoids loose line-level timestamps from "sucking in" words from the next phrase.
+    const refWords = refText.split(/\s+/).filter(w => w);
+    const refWordsCount = refWords.length;
+    
+    let mode = (isTimestampBased && refWordsCount === 0) ? 'time' : 'text';
+    
+    // If we have timestamps but the text also exists, check if the text matches the pool.
+    // If it doesn't match, we assume it's a translation/different track and use temporal logic.
+    if (mode === 'text' && isTimestampBased && refWordsCount > 0) {
+        const poolWord = allWords[wordIdx] ? allWords[wordIdx].text.trim().toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"") : null;
+        const firstRefWord = refWords[0].toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+        
+        // If the first word doesn't match, fall back to time-based grouping.
+        if (poolWord && poolWord !== firstRefWord) {
+            mode = 'time';
+        }
+    }
+
+    if (mode === 'time') {
       const nextStart = (idx < refCues.length - 1) ? refCues[idx + 1].startMs : Infinity;
       while (wordIdx < allWords.length && allWords[wordIdx].startMs < nextStart) {
         lineWords.push(allWords[wordIdx]);
         wordIdx++;
       }
     } else {
-      const refWordsCount = refText.split(/\s+/).filter(w => w).length;
       let addedNonEmpty = 0;
       while (wordIdx < allWords.length && addedNonEmpty < refWordsCount) {
         const w = allWords[wordIdx];
@@ -1241,7 +1259,7 @@ function applySmartMergeFromCues(refCues, refFormat) {
         wordIdx++;
       }
       // Peek ahead: if there are trailing blank words before the next non-empty word, 
-      // include them in the current line to preserve the silence.
+      // include them in the current line to preserve the silence/timing gap.
       while (wordIdx < allWords.length && (!allWords[wordIdx].text || !allWords[wordIdx].text.trim())) {
         lineWords.push(allWords[wordIdx]);
         wordIdx++;
