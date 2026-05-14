@@ -1538,44 +1538,52 @@ $('tool-remove-word-overlaps').onclick=()=>{
   });
   pushHistory();renderTimeline();$('tools-menu').classList.remove('open');
 };
-$('tool-remove-empty').onclick=()=>{
-  lines.forEach(l=>{
-    if(!l.words || !l.words.length) return;
-    // First: drop truly invalid words (zero-duration blanks, 0/0 timestamps)
-    l.words = l.words.filter(w => {
-        const t = (w.text || "").trim();
-        if (t && t !== "\\" && t !== "\"") return true; // Keep words with real text
-        // Drop blank words or "\" with zero or negative duration
-        if (w.endMs <= w.startMs) return false;
-        // Drop blank words or "\" with zero timestamps
-        if (w.startMs === 0 && w.endMs === 0) return false;
-        return true; // Keep blank words with valid duration
-    });
-    if(l.words.length < 2) return;
-    const newWs = [];
-    l.words.forEach((w, i) => {
-      if(w.text.trim()) {
-        newWs.push({...w});
-      } else {
-        if(newWs.length > 0) {
-          // Merge into previous
-          newWs[newWs.length - 1].endMs = w.endMs;
-        } else {
-          // It's at the start, keep as temp placeholder
-          newWs.push({...w, text: ""});
-        }
-      }
-    });
-    // Second pass to merge start blanks into the first non-blank
-    let finalWs = [];
-    let firstRealIdx = newWs.findIndex(w => w.text.trim());
-    if (firstRealIdx !== -1) {
-        const startMs = newWs[0].startMs;
-        finalWs = newWs.slice(firstRealIdx);
-        finalWs[0].startMs = startMs;
-    }
-    l.words = finalWs;
+function mergeEmptyWordsInLine(l) {
+  if(!l.words || !l.words.length) return;
+  
+  // 1. Initial cleanup: remove truly invalid blocks (zero duration or zero timestamps)
+  l.words = l.words.filter(w => {
+      const t = (w.text || "").trim();
+      if (t && t !== "\\" && t !== "\"") return true; // Keep real words
+      if (w.endMs <= w.startMs) return false;
+      if (w.startMs === 0 && w.endMs === 0) return false;
+      return true; // Keep valid blank durations for merging
   });
+
+  if(l.words.length < 2) return;
+
+  // 2. Pass 1: Merge blanks into previous word
+  const pass1 = [];
+  l.words.forEach(w => {
+    const t = (w.text || "").trim();
+    const isBlank = !t || t === "\\" || t === "\"";
+    if(!isBlank) {
+      pass1.push({...w});
+    } else {
+      if(pass1.length > 0) {
+        pass1[pass1.length - 1].endMs = w.endMs;
+      } else {
+        pass1.push({...w, text: ""});
+      }
+    }
+  });
+
+  // 3. Pass 2: Merge leading blanks into the first real word
+  let finalWs = pass1;
+  const firstRealIdx = pass1.findIndex(w => (w.text || "").trim());
+  if (firstRealIdx !== -1 && firstRealIdx > 0) {
+      const startMs = pass1[0].startMs;
+      finalWs = pass1.slice(firstRealIdx);
+      finalWs[0].startMs = startMs;
+  }
+  
+  l.words = finalWs;
+  // Sync the line text to the remaining words
+  l.text = l.words.map(w => w.text).join(' ').replace(/\s+/g, ' ').trim();
+}
+
+$('tool-remove-empty').onclick=()=>{
+  lines.forEach(l=>mergeEmptyWordsInLine(l));
   pushHistory();renderTimeline();$('tools-menu').classList.remove('open');
 };
 $('tool-compact-ws').onclick=()=>{
@@ -1584,13 +1592,61 @@ $('tool-compact-ws').onclick=()=>{
 };
 
 // â”€â”€ Hot Fix (one-click combo) â”€â”€
-$('btn-hotfix').onclick=()=>{
+function performHotFix() {
   waveformCache.clear();
-  // 1. Compact whitespace
-  lines.forEach(l=>{
+  
+  // 1. Text & Basic cleanup
+  lines.forEach(l => {
     l.text = (l.text || "").replace(/\s+/g,' ').trim();
-    if(l.words) l.words.forEach(w => w.text = (w.text || "").trim());
+    if(l.words) {
+      l.words.forEach(w => w.text = (w.text || "").trim());
+      // 2. Advanced Word-level merging (Remove Blanks & Merge Duration)
+      mergeEmptyWordsInLine(l);
+    }
   });
+  
+  // 3. Resolve Line-Level Overlaps & Word Jumps
+  const minD = 20;
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (lines[i].endMs > lines[i + 1].startMs) {
+      lines[i].endMs = lines[i + 1].startMs;
+      // Sync words to line boundary
+      if (lines[i].words && lines[i].words.length > 0) {
+        lines[i].words.forEach(w => {
+          if (w.startMs > lines[i].endMs) w.startMs = Math.max(lines[i].startMs, lines[i].endMs - minD);
+          if (w.endMs > lines[i].endMs) w.endMs = lines[i].endMs;
+        });
+        for (let j = 0; j < lines[i].words.length - 1; j++) {
+          if (lines[i].words[j].endMs > lines[i].words[j + 1].startMs) {
+              lines[i].words[j + 1].startMs = lines[i].words[j].endMs;
+              if (lines[i].words[j + 1].endMs < lines[i].words[j + 1].startMs + minD) {
+                  lines[i].words[j + 1].endMs = lines[i].words[j + 1].startMs + minD;
+              }
+          }
+        }
+      }
+    }
+  }
+
+  // 4. Final Gap Fill (Ensure full word coverage within lines)
+  lines.forEach(l => {
+    if (l.words && l.words.length > 0) {
+      l.words[0].startMs = l.startMs;
+      for (let i = 0; i < l.words.length - 1; i++) {
+        l.words[i].endMs = l.words[i + 1].startMs;
+      }
+      l.words[l.words.length - 1].endMs = l.endMs;
+    }
+  });
+  
+  pushHistory();
+  renderTimeline();
+}
+
+$('btn-hotfix').onclick = performHotFix;
+$('tool-hotfix').onclick = () => { performHotFix(); $('tools-menu').classList.remove('open'); };
+
+
   
   // 2. Word-level structural cleanup
   lines.forEach(l => {
@@ -1650,9 +1706,7 @@ $('btn-hotfix').onclick=()=>{
     }
   }
   
-  pushHistory();
-  renderTimeline();
-};
+
 
 // â”€â”€ Shift Time Modal â”€â”€
 $('shift-minus-500').onclick=()=>$('shift-amount').value=parseInt($('shift-amount').value||0)-500;
