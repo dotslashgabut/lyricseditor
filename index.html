@@ -330,9 +330,15 @@
                     <input type="radio" name="split-method" value="word" id="split-method-word">
                     <span>Split after word number:</span>
                 </label>
-                <div style="margin-left: 28px; margin-top: 6px; display:flex; align-items:center;">
-                    <input type="number" id="split-word-index" value="1" min="1" disabled style="width:60px; padding:6px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:4px;">
-                    <span id="split-word-preview" style="font-size:11px; color:var(--accent); margin-left:12px;"></span>
+                <div style="margin-left: 28px; margin-top: 8px; display:flex; align-items:center; gap:12px;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <input type="number" id="split-word-index" value="1" min="1" disabled style="width:60px; height:38px; padding:6px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px; font-size:18px; text-align:center; font-family:monospace; outline:none;">
+                        <div style="display:flex; flex-direction:column; gap:4px;">
+                            <button class="icon-btn" id="sw-inc" style="width:28px; height:20px; font-size:11px; border:1px solid var(--border); border-radius:4px;" title="Increase"><i class="fas fa-chevron-up"></i></button>
+                            <button class="icon-btn" id="sw-dec" style="width:28px; height:20px; font-size:11px; border:1px solid var(--border); border-radius:4px;" title="Decrease"><i class="fas fa-chevron-down"></i></button>
+                        </div>
+                    </div>
+                    <span id="split-word-preview" style="font-size:11px; color:var(--accent);"></span>
                 </div>
             </div>
             <div style="display:flex; gap:8px; justify-content:flex-end;">
