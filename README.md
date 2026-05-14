@@ -57,7 +57,7 @@ A professional-grade, browser-based word-level lyrics and subtitle editor. Desig
 | ![screenshot1](https://github.com/user-attachments/assets/01de2f14-0083-4ffc-a664-7c382a260b7e) | ![screenshot2](https://github.com/user-attachments/assets/fd33e65b-0ebf-4261-a330-d6b09991f2fc) | ![screenshot3](https://github.com/user-attachments/assets/d06c317f-7e0c-4270-a0d0-8410f6c46843) |
 | ![screenshot4](https://github.com/user-attachments/assets/980b27a5-bd83-42c0-b6bd-bd818af4212c) | ![screenshot5](https://github.com/user-attachments/assets/a9998f93-11f8-4b28-9324-7a2fcf83f870) | ![screenshot6](https://github.com/user-attachments/assets/684cd136-94af-4630-b7a8-6b2cc83b042f) |
 
-https://github.com/user-attachments/assets/363780d0-7a94-4e22-b686-9dba4ca5dca4
+[screenrecord](https://github.com/user-attachments/assets/363780d0-7a94-4e22-b686-9dba4ca5dca4)
 
 ## 📥 Supported Formats
 
