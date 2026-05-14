@@ -7,8 +7,8 @@
     --text-main: #ffffff;
     --text-muted: #8e8e93;
     --border: #333336;
-    --word-bg: #2a2a2e;
-    --word-border: #44444a;
+    --word-bg: rgba(42, 42, 46, 0.7);
+    --word-border: rgba(68, 68, 74, 0.8);
     --radius-sm: 4px;
     --radius-md: 8px;
     --radius-lg: 12px;
@@ -116,6 +116,19 @@ html, body {
     align-items: center;
     justify-content: center;
     margin: 0 !important;
+}
+
+#btn-hotfix {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+#btn-hotfix:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: rgba(255, 107, 0, 0.1);
+}
+#btn-hotfix:active {
+    background: rgba(255, 107, 0, 0.2);
+    transform: scale(0.92);
 }
 
 /* ── Toolbar ── */
@@ -519,10 +532,37 @@ html, body {
     touch-action: none;
 }
 
-.word-block:hover { background: #3a3a40; }
-.word-block.active { background: #d3d3d3; }
-.word-block.active .word-text, .word-block.active .word-duration { color: var(--bg-dark); }
-.word-block.dragging { cursor: grabbing; background: #454549; z-index: 15; }
+.word-block:hover { background: rgba(58, 58, 64, 0.8); }
+.word-block.active { 
+    background: rgba(255, 255, 255, 0.15); /* More transparent */
+    backdrop-filter: brightness(1.4) contrast(1.2); /* This makes the waveform behind it "pop" */
+    box-shadow: inset 0 0 15px rgba(255, 107, 0, 0.3);
+    border: 1px solid var(--accent);
+    z-index: 10;
+}
+.word-block.active .word-text, .word-block.active .word-duration { 
+    color: #fff; 
+    text-shadow: 0 0 8px rgba(0,0,0,0.8);
+}
+.word-block.dragging { cursor: grabbing; background: rgba(69, 69, 73, 0.9); z-index: 15; }
+
+.word-block.blank-word {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px dashed rgba(255, 255, 255, 0.1);
+    min-width: 24px;
+    backdrop-filter: blur(1px) brightness(0.6);
+}
+.word-block.blank-word .word-text::after {
+    content: '\f6e2'; /* ghost icon */
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 900;
+    font-size: 14px;
+    opacity: 0.5;
+    position: absolute;
+    left: 50%;
+    top: 45%;
+    transform: translate(-50%, -50%);
+}
 
 .word-text {
     font-size: 13px;
@@ -674,6 +714,93 @@ html, body {
     flex-shrink: 0;
 }
 
+/* Edit Modal Highlighter */
+.edit-input-wrapper {
+    position: relative;
+    width: 100%;
+    height: 120px;
+    background: var(--bg-dark);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.edit-input-backdrop, #edit-text-input {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    padding: 12px;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    border: none;
+    background: transparent;
+    margin: 0;
+    box-sizing: border-box;
+    overflow-y: scroll; /* Force scrollbars to keep identical width */
+    scrollbar-width: thin; /* Firefox support */
+    scrollbar-color: var(--border) transparent; /* Firefox support */
+}
+#edit-text-input {
+    color: transparent;
+    caret-color: var(--text-main);
+    resize: none;
+    outline: none;
+    z-index: 2;
+}
+#edit-text-input::selection {
+    background: rgba(255, 107, 0, 0.4);
+    color: var(--text-main); /* Make text visible when selected for drag */
+}
+.edit-input-backdrop {
+    color: var(--text-main);
+    z-index: 1;
+    pointer-events: none; /* Let clicks pass through to textarea */
+}
+
+/* Custom thin scrollbar for edit modal */
+#edit-text-input::-webkit-scrollbar,
+.edit-input-backdrop::-webkit-scrollbar {
+    width: 4px;
+}
+#edit-text-input::-webkit-scrollbar-track,
+.edit-input-backdrop::-webkit-scrollbar-track {
+    background: transparent;
+}
+#edit-text-input::-webkit-scrollbar-thumb,
+.edit-input-backdrop::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 2px;
+}
+#edit-text-input::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+.edit-drop-cursor {
+    position: absolute;
+    width: 2px;
+    height: 1.2em;
+    background: var(--accent);
+    z-index: 3;
+    pointer-events: none;
+    display: none;
+    border-radius: 1px;
+    box-shadow: 0 0 4px var(--accent);
+    animation: dropCursorBlink 0.6s ease-in-out infinite;
+}
+@keyframes dropCursorBlink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+.marker-highlight {
+    color: var(--accent);
+    background: rgba(255, 107, 0, 0.2);
+    /* Removed padding and bold to keep cursor alignment perfect */
+    border-radius: 2px;
+}
+
 /* ── Modal Overlays ── */
 .modal-overlay {
     position: fixed;
@@ -727,6 +854,18 @@ html, body {
 .compact-mode .word-text { font-size: 11px; }
 .compact-mode .word-duration { display: none; }
 
+/* ── Responsive Adjustments for Medium Screens ── */
+@media (max-width: 1280px) {
+    #btn-export span {
+        display: none;
+    }
+    #btn-export {
+        width: 36px;
+        padding: 0;
+        justify-content: center;
+    }
+}
+
 /* ── Mobile & Tablet Optimization (Stacked Mode) ── */
 @media (max-width: 1200px) {
     .toolbar {
@@ -756,7 +895,7 @@ html, body {
         margin-top: 4px;
     }
 
-    .btn.tool-btn, .btn-primary, .icon-btn {
+    .btn.tool-btn:not(.desktop-only), .btn-primary, .icon-btn {
         padding: 0 !important;
         width: 32px !important;
         height: 32px !important;
@@ -1093,4 +1232,22 @@ html, body {
 
 #search-clear:hover {
     opacity: 1 !important;
+}
+
+/* ── Desktop Only Helper ── */
+@media (max-width: 600px) {
+    .desktop-only {
+        display: none !important;
+    }
+}
+
+/* ── Number Input Refinement ── */
+input[type=number]::-webkit-inner-spin-button, 
+input[type=number]::-webkit-outer-spin-button { 
+    -webkit-appearance: none; 
+    margin: 0; 
+}
+input[type=number] {
+    -moz-appearance: textfield;
+    appearance: textfield;
 }
