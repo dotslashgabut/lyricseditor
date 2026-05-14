@@ -20,10 +20,68 @@ function detectFormat(filename, content) {
     if (t.includes('<transcript')) return 'srv1';
     return 'srv2'; // default xml to srv2
   }
-  if (filename.endsWith('.txt')) return 'txt';
+  if (filename.endsWith('.txt')) {
+    if (t.includes('\t') && /^\d+\.\d+/.test(t)) return 'audacity';
+    return 'txt';
+  }
   if (filename.endsWith('.lrc')) return 'lrc';
   if (/^\[\d{2}:\d{2}\.\d{2}\]/.test(t)) return 'lrc';
+  if (t.includes('\t') && /^\d+\.\d+/.test(t)) return 'audacity';
   return 'srt';
+}
+
+function detectSegments(content, format) {
+    if (format === 'vtt') {
+        // Split by WEBVTT at the start of a line, but ignore the first empty one
+        const parts = content.split(/^(?=WEBVTT)/m);
+        return parts.filter(p => p.trim()).map(p => p.trim());
+    }
+    if (format === 'srt') {
+        const blocks = content.trim().replace(/\r\n/g, '\n').split(/\n\n+/);
+        if (blocks.length <= 1) return [content];
+
+        const segments = [];
+        let currentSegment = [];
+        let lastId = -1;
+        
+        blocks.forEach(block => {
+            const idMatch = block.trim().match(/^(\d+)\n/);
+            if (idMatch) {
+                const id = parseInt(idMatch[1]);
+                // Only split if ID strictly decreases (restarts)
+                if (id < lastId && currentSegment.length > 0) {
+                    segments.push(currentSegment.join('\n\n'));
+                    currentSegment = [];
+                }
+                lastId = id;
+            }
+            currentSegment.push(block);
+        });
+        if (currentSegment.length > 0) segments.push(currentSegment.join('\n\n'));
+        return segments;
+    }
+    if (format === 'audacity') {
+        const lines = content.trim().split(/\r?\n/);
+        const segments = [];
+        let currentSegment = [];
+        let lastStart = -1;
+        lines.forEach(line => {
+            const parts = line.split('\t');
+            if (parts.length >= 2) {
+                const start = parseFloat(parts[0]);
+                // If timestamp restarts at 0 or is much earlier than last, it's a new segment
+                if (start < lastStart - 1 && currentSegment.length > 0) {
+                    segments.push(currentSegment.join('\n'));
+                    currentSegment = [];
+                }
+                lastStart = start;
+            }
+            currentSegment.push(line);
+        });
+        if (currentSegment.length > 0) segments.push(currentSegment.join('\n'));
+        return segments;
+    }
+    return [content];
 }
 
 function timeToMs(str) {
@@ -39,8 +97,8 @@ function timeToMs(str) {
 
 function msToLrc(ms) {
   ms = Math.max(0, Math.round(ms));
-  const m = Math.floor(ms/60000), s = Math.floor((ms%60000)/1000), cs = Math.floor((ms%1000)/10);
-  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(cs).padStart(2,'0')}`;
+  const m = Math.floor(ms/60000), s = Math.floor((ms%60000)/1000), ml = ms%1000;
+  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(ml).padStart(3,'0')}`;
 }
 
 function msToSrt(ms) {
@@ -133,16 +191,16 @@ function parseLRC(content) {
         lastW.endMs = c.endMs; // Seal perfectly to line end
       } else {
         // Other lines: sync last word to the line boundary
-        if (lastW.endMs <= lastW.startMs) {
+        // CRITICAL: We prioritize the next line's start time as the absolute deadline.
+        if (lastW.endMs <= lastW.startMs || lastW.endMs > c.endMs) {
           lastW.endMs = c.endMs;
         }
-        // If line is cut too short by next line, extend it to at least cover the last word
-        if (c.endMs <= lastW.startMs) {
-          c.endMs = lastW.startMs + 500;
-          lastW.endMs = c.endMs;
-        }
-        // Always ensure line covers all its words
-        if (lastW.endMs > c.endMs) c.endMs = lastW.endMs;
+        
+        // Ensure all words fit within the line boundary
+        c.words.forEach(w => {
+            if (w.startMs > c.endMs) w.startMs = Math.max(c.startMs, c.endMs - 50);
+            if (w.endMs > c.endMs) w.endMs = c.endMs;
+        });
       }
     }
   });
@@ -151,16 +209,17 @@ function parseLRC(content) {
 }
 
 function parseSRT(content) {
-  const chunks = content.trim().replace(/\r\n/g,'\n').split('\n\n'), cues = [];
+  const chunks = content.trim().replace(/\r\n/g,'\n').split(/\n\n+/), cues = [];
   let id = 1;
   chunks.forEach(chunk => {
-    const ls = chunk.split('\n');
+    const ls = chunk.trim().split('\n').map(l => l.trim());
+    if (ls.length < 1) return;
     let ti = 0;
     if (ls[0].match(/^\d+$/)) ti = 1;
     if (!ls[ti]) return;
     const times = ls[ti].split('-->');
     if (times.length !== 2) return;
-    cues.push({ id: id++, startMs: timeToMs(times[0]), endMs: timeToMs(times[1]), text: ls.slice(ti+1).join('\n').trim(), words: null });
+    cues.push({ id: id++, startMs: timeToMs(times[0]), endMs: timeToMs(times[1]), text: ls.slice(ti+1).join('\n'), words: null });
   });
   return cues;
 }
@@ -278,6 +337,7 @@ function parseContent(content, format) {
     case 'srv2': cues = parseSRV2(content); break;
     case 'srv3': cues = parseSRV23(content); break;
     case 'txt': cues = parseTXT(content); break;
+    case 'audacity': cues = parseAudacity(content); break;
     default: cues = parseSRT(content);
   }
   // Safety pass: ensure the very last cue has a duration if missing
@@ -373,8 +433,8 @@ function parseSRV2(content) {
     const tAttr = node.getAttribute('t');
     const dAttr = node.getAttribute('d');
     
-    const startMs = tAttr ? parseInt(tAttr) : 0;
-    const durMs = dAttr ? parseInt(dAttr) : 0;
+    const startMs = tAttr ? Math.round(parseFloat(tAttr)) : 0;
+    const durMs = dAttr ? Math.round(parseFloat(dAttr)) : 0;
     
     let endMs = startMs + durMs;
     if (i + 1 < texts.length) {
@@ -512,8 +572,8 @@ function parseLyricsFile(content) {
     // Line-level timestamps (usually indented less than words, e.g. 4 spaces)
     const lineStartMatch = block.match(/\n\s{2,6}start_ms:\s*(\d+)/);
     const lineEndMatch = block.match(/\n\s{2,6}end_ms:\s*(\d+)/);
-    const startMs = lineStartMatch ? parseInt(lineStartMatch[1]) : 0;
-    let endMs = lineEndMatch ? parseInt(lineEndMatch[1]) : 0;
+    const startMs = lineStartMatch ? Math.round(parseFloat(lineStartMatch[1])) : 0;
+    let endMs = lineEndMatch ? Math.round(parseFloat(lineEndMatch[1])) : 0;
     
     // Estimation logic (always 3s fallback)
     if (endMs <= startMs) {
@@ -538,8 +598,8 @@ function parseLyricsFile(content) {
         
         const wStartMatch = wBlock.match(/start_ms:\s*(\d+)/);
         const wEndMatch = wBlock.match(/end_ms:\s*(\d+)/);
-        const wStart = wStartMatch ? parseInt(wStartMatch[1]) : startMs;
-        const wEnd = wEndMatch ? parseInt(wEndMatch[1]) : 0;
+        const wStart = wStartMatch ? Math.round(parseFloat(wStartMatch[1])) : startMs;
+        const wEnd = wEndMatch ? Math.round(parseFloat(wEndMatch[1])) : 0;
         
         words.push({
           id: (idx * 1000) + wIdx + 1,
@@ -575,10 +635,15 @@ function parseLyricsFile(content) {
 function autoFillWords(cues) {
   cues.forEach(c => {
     if (!c.words || !c.words.length) {
-      const ws = c.text.trim().split(/\s+/);
-      if (!ws.length || !ws[0]) return;
-      const dur = c.endMs - c.startMs, perW = dur / ws.length;
-      c.words = ws.map((w, i) => ({ id: i+1, text: w, startMs: Math.round(c.startMs + perW*i), endMs: Math.round(c.startMs + perW*(i+1)) }));
+      const ws = c.text.trim().split(/\s+/).filter(w => w);
+      if (ws.length === 0) {
+        // Line is empty - create one blank word covering the whole duration
+        // This preserves the timing of empty lines during Smart Merge
+        c.words = [{ id: 1, text: "", startMs: c.startMs, endMs: c.endMs }];
+      } else {
+        const dur = c.endMs - c.startMs, perW = dur / ws.length;
+        c.words = ws.map((w, i) => ({ id: i+1, text: w, startMs: Math.round(c.startMs + perW*i), endMs: Math.round(c.startMs + perW*(i+1)) }));
+      }
     }
     // ensure full coverage
     if (c.words.length) {
@@ -804,6 +869,7 @@ function exportAs(cues, format, durationMs, options = {}) {
     case 'srv2': return stringifySRV2(exportCues);
     case 'srv3': return stringifySRV3(exportCues);
     case 'srv3_karaoke': return stringifySRV3Karaoke(exportCues);
+    case 'audacity_karaoke': return stringifyAudacity(exportCues, true);
     case 'json': return JSON.stringify({ 
       metadata: { duration_ms: durationMs },
       cues: exportCues.map(c => ({ startMs: c.startMs, endMs: c.endMs, text: c.text, words: c.words })) 
@@ -811,6 +877,7 @@ function exportAs(cues, format, durationMs, options = {}) {
     case 'json3': return stringifyJSON3(exportCues);
     case 'lyricsfile': return stringifyLyricsFile(exportCues, durationMs);
     case 'txt': return stringifyTXT(exportCues);
+    case 'audacity': return stringifyAudacity(exportCues, false);
     default: return '';
   }
 }
@@ -840,6 +907,38 @@ function stringifyLyricsFile(cues, durationMs) {
     yaml += `    ${cleanText}\n`;
   });
   return yaml;
+}
+
+function stringifyAudacity(cues, karaoke) {
+    let lines = [];
+    cues.forEach(c => {
+        if (karaoke && c.words && c.words.length > 0) {
+            c.words.forEach(w => {
+                const s = (w.startMs / 1000).toFixed(6);
+                const e = (w.endMs / 1000).toFixed(6);
+                const t = (w.text || "").replace(/\t/g, ' ').replace(/\n/g, ' ');
+                lines.push(`${s}\t${e}\t${t}`);
+            });
+        } else {
+            const s = (c.startMs / 1000).toFixed(6);
+            const e = (c.endMs / 1000).toFixed(6);
+            const t = (c.text || "").replace(/\t/g, ' ').replace(/\n/g, ' ');
+            lines.push(`${s}\t${e}\t${t}`);
+        }
+    });
+    return lines.join('\n') + '\n';
+}
+
+function parseAudacity(content) {
+    const lines = content.trim().split(/\r?\n/);
+    return lines.map((l, i) => {
+        const parts = l.split('\t');
+        if (parts.length < 2) return null;
+        const start = parseFloat(parts[0]) * 1000;
+        const end = parseFloat(parts[1]) * 1000;
+        const text = (parts[2] || "").trim();
+        return { id: i + 1, startMs: Math.round(start), endMs: Math.round(end), text, words: null };
+    }).filter(c => c !== null);
 }
 
 function downloadFile(content, filename) {

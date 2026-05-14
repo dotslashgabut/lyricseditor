@@ -7,21 +7,6 @@
     <title>Premium Lyrics & Subtitle Editor - Word-Level Timeline & Drag-Drop Sync Tool</title>
     <meta name="description" content="Professional word-level lyrics and subtitle editor with intuitive drag-and-drop timeline. Sync LRC, SRT, VTT, TTML, and YouTube formats with high-precision timing.">
 
-    <!-- Open Graph / Facebook -->
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="https://dotslashgabut.github.io/lyricseditor/">
-    <meta property="og:title" content="Premium Lyrics & Subtitle Editor - Word-Level Timeline & Drag-Drop Sync Tool">
-    <meta property="og:description" content="Professional word-level lyrics editor with drag-and-drop timeline. High-precision synchronization for LRC, SRT, VTT, and more.">
-    <meta property="og:image" content="https://dotslashgabut.github.io/lyricseditor/screenshot.png">
-
-    <!-- Twitter / X -->
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:site" content="@dotslashgabut">
-    <meta name="twitter:url" content="https://dotslashgabut.github.io/lyricseditor/">
-    <meta name="twitter:title" content="Premium Lyrics & Subtitle Editor - Word-Level Timeline & Drag-Drop Sync Tool">
-    <meta name="twitter:description" content="Professional word-level lyrics and subtitle editor. High-precision synchronization for LRC, SRT, VTT, and more.">
-    <meta name="twitter:image" content="https://dotslashgabut.github.io/lyricseditor/screenshot.png">
-
     <link rel="stylesheet" href="styles.css">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -39,6 +24,7 @@
             <input type="file" id="input-audio" accept="audio/*,video/*,.mp3,.wav,.ogg,.m4a,.mp4,.webm" hidden>
             <button class="btn tool-btn" id="btn-load-lyrics"><i class="fas fa-file-alt"></i> <span>Load Lyrics</span></button>
             <input type="file" id="input-lyrics" accept=".lrc,.srt,.vtt,.txt,.json,.xml,.ttml,.lyricsfile,.srv1,.srv2,.srv3" hidden>
+            <input type="file" id="input-smart-merge" accept=".lrc,.srt,.vtt,.txt,.json,.xml,.ttml,.lyricsfile,.srv1,.srv2,.srv3" hidden>
 
             <!-- Undo / Redo -->
             <button class="icon-btn" id="btn-undo" title="Undo (Ctrl+Z)"><i class="fas fa-undo"></i></button>
@@ -53,8 +39,14 @@
                     <div class="dropdown-item" id="tool-find-replace"><i class="fas fa-exchange-alt"></i> Find & Replace</div>
                     <div class="dropdown-item" id="tool-sort-rows"><i class="fas fa-sort-numeric-down"></i> Sort Rows by Time</div>
                     <div class="dropdown-item" id="tool-remove-empty-lines"><i class="fas fa-trash-alt"></i> Remove Empty Lines</div>
-                    <div class="dropdown-item" id="tool-remove-overlaps"><i class="fas fa-compress-arrows-alt"></i> Remove Overlaps</div>
+                    <div class="dropdown-item" id="tool-fill-gap-to-start"><i class="fas fa-step-backward"></i> Fill Gap to Start of Audio</div>
+                    <div class="dropdown-item" id="tool-fill-gaps-with-lines"><i class="fas fa-plus-square"></i> Fill Gaps Between Lines</div>
+                    <div class="dropdown-item" id="tool-fill-gap-to-end"><i class="fas fa-step-forward"></i> Fill Gap to End of Audio</div>
+                    <div class="dropdown-item" id="tool-fill-all-gaps"><i class="fas fa-fill-drip"></i> Fill All Gaps (Start, Middle, End)</div>
+                    <div class="dropdown-item" id="tool-remove-overlaps"><i class="fas fa-history"></i> Fix Overlaps (Shrink)</div>
+                    <div class="dropdown-item" id="tool-sequentialize-cascade"><i class="fas fa-layer-group"></i> Fix Jumps (Push Sequential)</div>
                     <div class="dropdown-item" id="tool-merge-lines"><i class="fas fa-object-group"></i> Merge Selected Lines</div>
+                    <div class="dropdown-item" id="tool-smart-merge"><i class="fas fa-wand-magic-sparkles"></i> Smart Merge (via Ref File)...</div>
                     <div class="dropdown-item" id="tool-split-lines"><i class="fas fa-cut"></i> Split Selected Lines</div>
                     <div class="dropdown-item" id="tool-sync-line-words"><i class="fas fa-expand-arrows-alt"></i> Sync Line to Words</div>
                     <div class="dropdown-item" id="tool-clear-all" style="color: #ff4d4f;"><i class="fas fa-trash-alt" style="color: #ff4d4f;"></i> Clear All Lines</div>
@@ -66,9 +58,12 @@
                     <div class="dropdown-section-title">Word Tools</div>
                     <div class="dropdown-item" id="tool-auto-karaoke"><i class="fas fa-wand-magic-sparkles"></i> Auto-Generate Word Timings</div>
                     <div class="dropdown-item" id="tool-fill-gaps"><i class="fas fa-arrows-alt-h"></i> Fill Gaps Between Words</div>
+                    <div class="dropdown-item" id="tool-remove-word-overlaps"><i class="fas fa-compress-arrows-alt"></i> Remove Word Overlaps</div>
                     <div class="dropdown-item" id="tool-remove-empty"><i class="fas fa-eraser"></i> Remove Empty Words</div>
                     <div class="dropdown-item" id="tool-compact-ws"><i class="fas fa-text-width"></i> Compact Whitespace</div>
                     <div class="dropdown-item" id="tool-clear-words"><i class="fas fa-ban"></i> Clear All Word Timings</div>
+                    <div class="dropdown-item" id="tool-merge-words-in-lines"><i class="fas fa-object-group"></i> Merge Words in Lines</div>
+                    <div class="dropdown-item" id="tool-join-words"><i class="fas fa-compress-arrows-alt"></i> Join Words (No Spaces)</div>
                     <div class="dropdown-item" id="tool-distribute-words"><i class="fas fa-align-justify"></i> Distribute Words Evenly</div>
                     <div class="dropdown-divider"></div>
                     <div class="dropdown-section-title">Session Management</div>
@@ -82,6 +77,11 @@
                 <button id="btn-nudge-forward" class="btn" title="Shift Forward (])"><i class="fas fa-plus"></i></button>
             </div>
 
+            <!-- Split & Merge Selected Lines (Direct Access) -->
+            <button class="btn tool-btn desktop-only" id="btn-split-header" title="Split selected lines"><i class="fas fa-cut"></i></button>
+            <button class="btn tool-btn desktop-only" id="btn-merge-header" title="Merge selected lines"><i class="fas fa-object-group"></i></button>
+            <button class="btn tool-btn desktop-only" id="btn-smart-merge-header" title="Smart Merge Lines (via reference file)"><i class="fas fa-wand-magic-sparkles"></i></button>
+
             <!-- Hot Fix (one-click) -->
             <button class="btn tool-btn" id="btn-hotfix" title="Hot Fix: compact whitespace + remove empty + fill gaps"><i class="fas fa-bolt"></i> <span>Hot Fix</span></button>
         </div>
@@ -93,6 +93,9 @@
                 <button class="btn toggle-btn active" id="view-one-line" title="Default View (D)"><i class="fas fa-list"></i></button>
                 <button class="btn toggle-btn" id="view-compact" title="Compact View (C)"><i class="fas fa-align-justify"></i></button>
             </div>
+            <!-- Waveform Toggle -->
+            <button class="icon-btn" id="btn-toggle-waveform" title="Toggle Audio Waveform" style="color: var(--text-muted);"><i class="fas fa-wave-square"></i></button>
+
             <!-- Word Highlight Toggle -->
             <button class="icon-btn" id="btn-toggle-highlight" title="Toggle Word Highlight" style="color: var(--accent);"><i class="fas fa-highlighter"></i></button>
 
@@ -121,6 +124,7 @@
                     <div class="dropdown-item" data-format="vtt_karaoke"><i class="fas fa-microphone-alt"></i> VTT (Words)</div>
                     <div class="dropdown-item" data-format="ttml_karaoke"><i class="fas fa-microphone-alt"></i> TTML (Words)</div>
                     <div class="dropdown-item" data-format="srv3_karaoke"><i class="fas fa-microphone-alt"></i> YouTube SRV (Words)</div>
+                    <div class="dropdown-item" data-format="audacity_karaoke"><i class="fas fa-microphone-alt"></i> Audacity Labels (Words)</div>
                     <div class="dropdown-divider"></div>
                     <div class="dropdown-section-title">Other Formats</div>
                     <div class="dropdown-item" data-format="srv1"><i class="fas fa-file-code"></i> YouTube SRV1</div>
@@ -128,6 +132,7 @@
                     <div class="dropdown-item" data-format="srv3"><i class="fas fa-file-code"></i> YouTube SRV3</div>
                     <div class="dropdown-item" data-format="json"><i class="fas fa-code"></i> JSON</div>
                     <div class="dropdown-item" data-format="json3"><i class="fas fa-code"></i> YouTube JSON3</div>
+                    <div class="dropdown-item" data-format="audacity"><i class="fas fa-file-waveform"></i> Audacity Labels</div>
                     <div class="dropdown-item" data-format="lyricsfile"><i class="fas fa-file-code"></i> LRCLIB (.lyricsfile)</div>
                     <div class="dropdown-item" data-format="txt"><i class="fas fa-font"></i> Plain Text</div>
                 </div>
@@ -186,7 +191,7 @@
         </div>
 
         <div class="timeline-scroll-area" id="timeline-container">
-            <div class="placeholder-text">Load audio and lyrics to start editing</div>
+            <div class="placeholder-text" style="display:none"></div>
         </div>
     </main>
 
@@ -194,7 +199,15 @@
     <footer class="player-controls">
         <button class="play-btn" id="btn-play-pause"><i class="fas fa-play"></i></button>
         <button class="icon-btn" id="btn-stop"><i class="fas fa-stop"></i></button>
-        <button class="icon-btn" id="btn-repeat" title="Loop current line"><i class="fas fa-redo"></i></button>
+        
+        <div style="display:flex; gap:4px; border-left:1px solid var(--border); border-right:1px solid var(--border); padding:0 8px; margin:0 4px;">
+            <button class="icon-btn" id="btn-repeat-word" title="Loop current word" style="position:relative;">
+                <i class="fas fa-italic" style="font-size:10px;"></i>
+                <i class="fas fa-redo" style="font-size:7px; position:absolute; bottom:6px; right:6px;"></i>
+            </button>
+            <button class="icon-btn" id="btn-repeat" title="Loop current line"><i class="fas fa-redo"></i></button>
+            <button class="icon-btn" id="btn-repeat-song" title="Loop entire song"><i class="fas fa-sync-alt"></i></button>
+        </div>
 
         <div class="time-display" id="time-display">00:00.00 / 00:00.00</div>
 
@@ -246,6 +259,45 @@
             </div>
         </div>
     </div>
+
+    <!-- Jump to Line Modal -->
+    <div class="modal-overlay" id="jump-line-modal" style="display:none">
+        <div class="modal-box" style="width: 280px; padding: 24px;">
+            <h3 style="margin-top:0; display:flex; align-items:center; gap:10px;"><i class="fas fa-hashtag" style="color:var(--accent);"></i> Jump to Line</h3>
+            <div style="margin:20px 0; display:flex; align-items:center; gap:12px;">
+                <input type="number" id="jump-line-input" min="1" placeholder="Line #" style="flex:1; height:50px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:8px; font-size:24px; text-align:center; font-family:'JetBrains Mono', monospace; font-weight:600; outline:none; transition:border-color 0.2s;">
+                <div style="display:flex; flex-direction:column; gap:4px;">
+                    <button class="icon-btn" id="jl-inc" style="width:32px; height:23px; font-size:12px; border:1px solid var(--border); border-radius:4px;" title="Increase Line Number"><i class="fas fa-chevron-up"></i></button>
+                    <button class="icon-btn" id="jl-dec" style="width:32px; height:23px; font-size:12px; border:1px solid var(--border); border-radius:4px;" title="Decrease Line Number"><i class="fas fa-chevron-down"></i></button>
+                </div>
+            </div>
+            <div id="jl-info" style="text-align:center; font-size:12px; color:var(--text-muted); margin-bottom:20px; letter-spacing:0.5px;">RANGE: 1 - 0</div>
+            <div style="display:flex; gap:10px; justify-content:flex-end;">
+                <button class="btn" id="jl-cancel" style="padding: 8px 16px;">Cancel</button>
+                <button class="btn btn-primary" id="jl-apply" style="padding: 8px 24px;">Go</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Jump to Word Modal -->
+    <div class="modal-overlay" id="jump-word-modal" style="display:none">
+        <div class="modal-box" style="width: 280px; padding: 24px;">
+            <h3 style="margin-top:0; display:flex; align-items:center; gap:10px;"><i class="fas fa-italic" style="color:var(--accent);"></i> Jump to Word</h3>
+            <div style="margin:20px 0; display:flex; align-items:center; gap:12px;">
+                <input type="number" id="jump-word-input" min="1" placeholder="Word #" style="flex:1; height:50px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:8px; font-size:24px; text-align:center; font-family:'JetBrains Mono', monospace; font-weight:600; outline:none; transition:border-color 0.2s;">
+                <div style="display:flex; flex-direction:column; gap:4px;">
+                    <button class="icon-btn" id="jw-inc" style="width:32px; height:23px; font-size:12px; border:1px solid var(--border); border-radius:4px;" title="Increase Word Number"><i class="fas fa-chevron-up"></i></button>
+                    <button class="icon-btn" id="jw-dec" style="width:32px; height:23px; font-size:12px; border:1px solid var(--border); border-radius:4px;" title="Decrease Word Number"><i class="fas fa-chevron-down"></i></button>
+                </div>
+            </div>
+            <div id="jw-info" style="text-align:center; font-size:12px; color:var(--text-muted); margin-bottom:20px; letter-spacing:0.5px;">RANGE: 1 - 0</div>
+            <div style="display:flex; gap:10px; justify-content:flex-end;">
+                <button class="btn" id="jw-cancel" style="padding: 8px 16px;">Cancel</button>
+                <button class="btn btn-primary" id="jw-apply" style="padding: 8px 24px;">Go</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Split Line Modal -->
     <div class="modal-overlay" id="split-line-modal" style="display:none">
         <div class="modal-box" style="min-width: 380px;">
@@ -292,16 +344,87 @@
     <!-- Edit Text Modal -->
     <div class="modal-overlay" id="edit-text-modal" style="display:none">
         <div class="modal-box" style="min-width: 450px;">
-            <h3>Edit Lyric Line</h3>
             <div style="margin:16px 0;">
-                <textarea id="edit-text-input" style="width:100%; height:120px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:4px; padding:12px; font-family:inherit; font-size:14px; line-height:1.5; resize: vertical;"></textarea>
-                <div style="font-size:11px; color:var(--text-muted); margin-top:8px;">
-                    <i class="fas fa-info-circle"></i> If word count changes, timings will be redistributed evenly.
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <label for="edit-text-input" style="font-size:13px; color:var(--text-muted); margin-right: 20px; font-weight: 500;">Text:</label>
+                    <div style="display:flex; gap:6px;">
+                        <button class="btn" id="btn-edit-undo" style="padding:4px 8px; font-size:11px;" title="Undo (Ctrl+Z)"><i class="fas fa-undo"></i></button>
+                        <button class="btn" id="btn-edit-redo" style="padding:4px 8px; font-size:11px;" title="Redo (Ctrl+Shift+Z / Ctrl+Y)"><i class="fas fa-redo"></i></button>
+                        <div style="width: 12px;"></div>
+                        <button class="btn" id="btn-remove-blank" style="padding:4px 10px; font-size:11px; color:#ff4d4f; border-color:rgba(255,77,79,0.2);" title="Remove all blank word placeholders"><i class="fas fa-eraser"></i> Remove Blanks</button>
+                        <button class="btn" id="btn-join-words" style="padding:4px 10px; font-size:11px;" title="Join all words by removing spaces"><i class="fas fa-compress-arrows-alt"></i> Join Words</button>
+                        <button class="btn" id="btn-insert-blank" style="padding:4px 10px; font-size:11px;" title="Insert a placeholder for a timestamp without text"><i class="fas fa-ghost"></i> Insert Blank</button>
+                    </div>
+                </div>
+                <div class="edit-input-wrapper">
+                    <div id="edit-text-backdrop" class="edit-input-backdrop"></div>
+                    <textarea id="edit-text-input" spellcheck="false" placeholder="Type lyrics here..."></textarea>
+                    <div id="edit-drop-cursor" class="edit-drop-cursor"></div>
+                </div>
+                <div style="font-size:11px; color:var(--text-muted); margin-top:8px; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <i class="fas fa-info-circle"></i> Use <b>\</b> for blank words.
+                    </div>
+                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer; color:var(--text-main);" title="If checked, new words will be mapped directly to existing timestamp slots in order, ignoring text similarity.">
+                        <input type="checkbox" id="edit-keep-structure" style="width:14px; height:14px; accent-color:var(--accent);"> Keep Word Timings
+                    </label>
                 </div>
             </div>
             <div style="display:flex; gap:8px; justify-content:flex-end;">
                 <button class="btn" id="et-cancel">Cancel</button>
                 <button class="btn btn-primary" id="et-apply">Apply Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Smart Merge Modal -->
+    <div class="modal-overlay" id="smart-merge-modal" style="display:none">
+        <div class="modal-box" style="max-width: 450px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <h3 style="margin:0;"><i class="fas fa-magic"></i> Smart Merge Lines</h3>
+                <button class="icon-btn" id="smart-merge-close-top"><i class="fas fa-times"></i></button>
+            </div>
+            <div style="margin-bottom:20px; line-height:1.6; font-size:14px; color:var(--text-muted);">
+                <p>Smart Merge will re-organize your current line breaks to match a <b>reference lyric file</b> (LRC, TXT, etc.).</p>
+                <ul style="padding-left: 20px; margin-top: 10px;">
+                    <li>Keep your current word-level timestamps</li>
+                    <li>Automatic text alignment and grouping</li>
+                    <li>Ideal for fixing bad line splitting from AI models</li>
+                </ul>
+            </div>
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+                <button class="btn" id="smart-merge-cancel">Cancel</button>
+                <button class="btn btn-primary" id="smart-merge-select-file">
+                    <i class="fas fa-file-import"></i> Select Reference File
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Segments Modal -->
+    <div class="modal-overlay" id="import-segments-modal" style="display:none">
+        <div class="modal-box" style="min-width: 450px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <h3 style="margin:0;"><i class="fas fa-layer-group"></i> Multiple Segments Detected</h3>
+                <button class="icon-btn" id="import-segments-close-top"><i class="fas fa-times"></i></button>
+            </div>
+            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+                Choose which segments to use. <b>Primary</b> is the main timing source, <b>Reference</b> provides the phrasing structure.
+            </p>
+            <div style="display:grid; grid-template-columns: 1fr 60px 60px 70px; gap:10px; padding: 0 12px 8px; border-bottom: 1px solid var(--border); font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">
+                <span>Segment Details</span>
+                <span style="text-align:center;">Primary</span>
+                <span style="text-align:center;">Ref</span>
+                <span style="text-align:center;">Quick</span>
+            </div>
+            <div id="import-segments-list" style="max-height: 300px; overflow-y: auto; margin-bottom: 20px; display: flex; flex-direction: column; gap: 8px; padding: 10px 4px;">
+                <!-- Segment items will be injected here -->
+            </div>
+            <div style="display:flex; gap:8px; justify-content:flex-end; border-top: 1px solid var(--border); margin-top: 10px; padding-top: 16px;">
+                <button class="btn" id="import-segments-all">Import All (Joined)</button>
+                <button class="btn btn-primary" id="import-segments-smart" title="Automatically pick the longest segment as Primary and shortest as Reference for Smart Merge">
+                    <i class="fas fa-wand-magic-sparkles"></i> Smart Import (Auto Merge)
+                </button>
             </div>
         </div>
     </div>
@@ -328,7 +451,7 @@
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                     <span style="color:var(--text-muted);">Stop</span>
-                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">S</kbd>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">X</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                     <span style="color:var(--text-muted);">Add New Line</span>
@@ -339,8 +462,16 @@
                     <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">Delete</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
-                    <span style="color:var(--text-muted);">Toggle Repeat</span>
+                    <span style="color:var(--text-muted);">Toggle Word Repeat</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">L</kbd>
+                </div>
+                <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
+                    <span style="color:var(--text-muted);">Toggle Line Repeat</span>
                     <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">R</kbd>
+                </div>
+                <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
+                    <span style="color:var(--text-muted);">Toggle Song Repeat</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">O</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                     <span style="color:var(--text-muted);">Mute / Unmute</span>
@@ -352,11 +483,11 @@
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                     <span style="color:var(--text-muted);">Search</span>
-                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">F</kbd>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">S</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                     <span style="color:var(--text-muted);">Find & Replace</span>
-                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">G</kbd>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">H</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                     <span style="color:var(--text-muted);">Shift Time...</span>
@@ -364,15 +495,23 @@
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                     <span style="color:var(--text-muted);">Hot Fix</span>
-                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">H</kbd>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">F</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                     <span style="color:var(--text-muted);">Shortcuts Info</span>
                     <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">K</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
+                    <span style="color:var(--text-muted);">Jump to Line #</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">G</kbd>
+                </div>
+                <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
+                    <span style="color:var(--text-muted);">Jump to Word #</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">W</kbd>
+                </div>
+                <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                     <span style="color:var(--text-muted);">Toggle Fullscreen</span>
-                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">L</kbd>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">P</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                     <span style="color:var(--text-muted);">Default View</span>
@@ -385,6 +524,14 @@
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                     <span style="color:var(--text-muted);">Prev / Next Line</span>
                     <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">↑ / ↓</kbd>
+                </div>
+                <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
+                    <span style="color:var(--text-muted);">First / Last Line</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">Home / End</kbd>
+                </div>
+                <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
+                    <span style="color:var(--text-muted);">Jump 5 Lines +/-</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">PgUp / PgDn</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                     <span style="color:var(--text-muted);">Seek +/- 2s</span>
@@ -427,16 +574,6 @@
 
     <script src="parser.js"></script>
     <script src="script.js"></script>
-
-    <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-VTS4PY9E9X"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-
-      gtag('config', 'G-VTS4PY9E9X');
-    </script>
 
 </body>
 

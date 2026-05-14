@@ -16,11 +16,12 @@ A professional-grade, browser-based word-level lyrics and subtitle editor. Desig
 - **Multi-Format Support**: Import and export a wide variety of subtitle and karaoke formats.
 - **Advanced Timeline**:
     - Interactive waveform-style word blocks.
+    - **Real-Time Waveform Background**: Visualizes audio peaks directly behind word blocks for ultra-precise timing.
     - Drag edges to resize or drag the center to move words.
     - Automatic gap filling and overlapping prevention.
 - **Smart Tools**:
-    - **Global Tools**: Shift Time, Find & Replace, Remove Overlaps, Merge/Split Selected Lines, Sync Line to Words, Sort by Time.
-    - **Word Tools**: Auto-Generate Word Timings, Fill Gaps, Remove Empty Words, Compact Whitespace, Clear Word Timings, Distribute Words Evenly.
+    - **Global Tools**: Shift Time, Find & Replace, Sort by Time, Remove Empty Lines, Fill Gaps with Empty Lines, Fill Gap to End of Audio, Fix Overlaps (Shrink), Fix Jumps (Push Sequential), Merge/Split Selected Lines, Smart Merge (via Ref File), Sync Line to Words, Clear All.
+    - **Word Tools**: Auto-Generate Word Timings, Fill Gaps, Remove Word Overlaps, Remove Empty Words, Compact Whitespace, Clear Word Timings, Merge Words in Lines, Join Words (No Spaces), Distribute Words Evenly.
     - **Text Formatting**: Change Case (Title, Sentence, Upper, Lower), Remove Punctuation.
     - **Hot Fix**: One-click cleanup (compact whitespace, remove empty words, fill gaps).
 - **Visual Feedback**:
@@ -28,7 +29,7 @@ A professional-grade, browser-based word-level lyrics and subtitle editor. Desig
     - **Toggle Control**: Easily enable or disable the highlighting feature using the toggle button in the toolbar.
 - **Playback & Editing**:
     - High-precision audio playback with granular seeking.
-    - Line repeat mode for focused timing adjustments on a single line.
+    - Advanced looping modes: **Individual Words** (**L**), **Line** (**R**), and **Entire Song** (**O**).
     - Progress bar seeking and volume control (with shortcut support).
 - **Professional UI**:
     - Dark mode by default with a premium aesthetic.
@@ -51,12 +52,12 @@ A professional-grade, browser-based word-level lyrics and subtitle editor. Desig
     - **Toggle Empty Lines**: Optional automatic insertion of empty "clear screen" lines in LRC and TTML exports to match the editor's visual state.
 - **Undo/Redo**: Full history support for all editing actions, including file loading and removal (up to 50 steps).
 
-| | |
-|:-:|:-:|
-| ![screenshot1](https://github.com/user-attachments/assets/702b5201-a5ec-46b4-b5d1-4ae86ab47761) | ![screenshot2](https://github.com/user-attachments/assets/82583a9a-a04c-45de-bad5-d7efea0b9929) |
-| ![screenshot3](https://github.com/user-attachments/assets/ade078b0-a961-469c-a319-0e526cfc9854) | ![screenshot4](https://github.com/user-attachments/assets/d506e9bf-3961-4de9-a63a-6d4e908e7957) |
+| | | |
+|:-:|:-:|:-:|
+| ![screenshot1](https://github.com/user-attachments/assets/01de2f14-0083-4ffc-a664-7c382a260b7e) | ![screenshot2](https://github.com/user-attachments/assets/fd33e65b-0ebf-4261-a330-d6b09991f2fc) | ![screenshot3](https://github.com/user-attachments/assets/d06c317f-7e0c-4270-a0d0-8410f6c46843) |
+| ![screenshot4](https://github.com/user-attachments/assets/980b27a5-bd83-42c0-b6bd-bd818af4212c) | ![screenshot5](https://github.com/user-attachments/assets/a9998f93-11f8-4b28-9324-7a2fcf83f870) | ![screenshot6](https://github.com/user-attachments/assets/684cd136-94af-4630-b7a8-6b2cc83b042f) |
 
-https://github.com/user-attachments/assets/2eed0d00-c213-4737-b9e3-c4cf02fc6884
+https://github.com/user-attachments/assets/363780d0-7a94-4e22-b686-9dba4ca5dca4
 
 ## 📥 Supported Formats
 
@@ -68,11 +69,12 @@ https://github.com/user-attachments/assets/2eed0d00-c213-4737-b9e3-c4cf02fc6884
 - YouTube XML (SRV1, SRV2, SRV3)
 - YouTube JSON3
 - LRCLIB (.lyricsfile)
+- Audacity Labels (.txt)
 - Plain Text (.txt)
 
 ### Export
-- **Subtitles**: LRC, SRT, VTT, TTML
-- **Karaoke (Word-Level)**: Enhanced LRC, VTT (Words), TTML (Words), YouTube SRV3 (Words)
+- **Subtitles**: LRC, SRT, VTT, TTML, Audacity Labels
+- **Karaoke (Word-Level)**: Enhanced LRC, VTT (Words), TTML (Words), YouTube SRV3 (Words), Audacity Labels (Words)
 - **Other**: YouTube SRV1/SRV2/SRV3, JSON, YouTube JSON3, LRCLIB, Plain Text
 
 ## 🎵 Audio Precision & Sync
@@ -84,14 +86,30 @@ For professional, high-precision work, please consider the following:
 - **Global & Partial Shift**: Use the **`[`** and **`]`** keys (or the UI buttons) to shift timings. If lines are selected, only those will be shifted.
 - **Flexible Step**: Adjust the millisecond value in the shift input to control how much time is shifted per click.
 
+## 🧠 Smart Merge & Smart Import
+
+These advanced tools are designed to fix one of the most common issues in lyric editing: **bad line splitting from AI models** (like Whisper or Gemini).
+
+- **The Problem**: AI models often output word-level timestamps with arbitrary line breaks that don't match the song's phrasing or poetic structure.
+- **Smart Merge (External Files)**: 
+    1. Load your word-timed file (**Primary**).
+    2. Click **Smart Merge** in the toolbar and select a "clean" text/lyrics file (**Reference**) that has the correct line phrasing.
+    3. The editor will automatically redistribute all word timestamps into the line structure of your reference file, preserving every millisecond of timing while fixing the visual layout instantly.
+- **Smart Import (Internal Tracks)**: 
+    - If your file contains multiple segments (e.g., an Audacity Label file with separate word and phrase tracks), the **Multiple Segments** modal will appear.
+    - Choose **Smart Import** to manually select which track is the **Primary** source and which is the **Reference** source.
+    - The editor will execute the merge logic using the internal data of the single file, including built-in line-count validation and text similarity checks.
+
 ## ⌨️ Keyboard Shortcuts
 
 ### Playback & Volume
 | Shortcut | Action |
 | :--- | :--- |
 | **Space** | Play / Pause Audio |
-| **S** | Stop Audio (Reset to start) |
+| **X** | Stop Audio (Reset to start) |
+| **L** | Toggle Word Repeat |
 | **R** | Toggle Line Repeat (Loop current line) |
+| **O** | Toggle Song Repeat |
 | **M** | Mute / Unmute Audio |
 | **Ctrl + Up / Down** | Increase / Decrease Volume |
 | **Left / Right** | Seek Audio (-2s / +2s) |
@@ -102,6 +120,8 @@ For professional, high-precision work, please consider the following:
 | **N** | Insert New Blank Line |
 | **Delete** | Delete Selected Lines |
 | **Up / Down** | Select Previous / Next Line |
+| **Home / End** | Jump to First / Last Line |
+| **PgUp / PgDn** | Jump 5 Lines Backward / Forward |
 | **Ctrl + Z / Y** | Undo / Redo Changes |
 | **[ / ]** | Shift Time Backward / Forward (100ms) |
 | **Ctrl + [ / ]** | Shift Time (Large Step: 500ms) |
@@ -111,16 +131,49 @@ For professional, high-precision work, please consider the following:
 | :--- | :--- |
 | **1 / 2** | Load Audio / Load Lyrics |
 | **E** | **Quick Export** (Prioritizes Word-Level/Karaoke formats) |
-| **F** | Focus Search Box |
-| **G** | Open Find & Replace |
+| **S** | Focus Search Box |
+| **H** | Open Find & Replace |
 | **T** | Open Global Time Shift modal |
-| **H** | **Hot Fix** (One-click cleanup: compact, remove empty, fill gaps) |
+| **F** | **Hot Fix** (One-click cleanup: compact, remove empty, fill gaps) |
+| **G** | **Jump to Line Number** |
+| **W** | **Jump to Word Number** |
 | **D / C** | Default View / Compact View Mode |
-| **L** | Toggle Fullscreen |
+| **P** | Toggle Fullscreen |
 | **K** | Open Keyboard Shortcuts help |
 | **Esc** | Close Modals / Clear Search focus |
 
 ## 🌟 What's New
+
+### v0.0.5
+
+- **Enhanced Navigation Suite**: Added high-precision "Jump to Line" (**G**) and "Jump to Word" (**W**) modals with vertical adjustment controls for lightning-fast timeline navigation.
+- **Advanced Loop Controls**: Expanded looping capabilities with dedicated modes for **Individual Words** (**L**) and **Entire Song** (**O**) (previously only available for **Line** (**R**)). Features a "Loop Lock" mechanism to prevent synchronization drift during word-level editing.
+- **Shortcuts Refinement**: Reassigned core shortcuts for better mnemonics (e.g., **P** for Fullscreen, **O** for s**OOOOO**ng loop) and added keyboard shortcut tips to the initial placeholder screen.
+- **UI Polishing**: Redesigned numeric input controls in modals to remove browser default spin buttons, replacing them with a custom premium vertical UI.
+- **Comprehensive Gap Filling**: Expanded the gap-filling suite with "Fill Gap to Start of Audio" and "Fill All Gaps" (Start, Middle, and End). These tools ensure your lyrics cover the entire audio timeline perfectly, preventing unintended "blank screens" during playback.
+- **Audacity Labels Power-Suite**: Full support for importing and exporting Audacity Label formats. Includes a specialized **Word-Level Export** mode that generates individual labels for every word in the timeline.
+- **Advanced Multi-Segment Import**: Automatically detects multiple tracks or segments within VTT, SRT, and Audacity Labels files. New modal allows selecting specific tracks, joining all, or using Smart Import.
+- **Manual Smart Import (Integrated Smart Merge)**: Manually pick your "Primary" timing track and "Reference" phrasing track from a single multi-segment file. This feature leverages the **Smart Merge** logic to automatically fix AI-generated line breaks by realigning word timings to your preferred structure, featuring line-count validation and similarity checks.
+- **Real-Time Audio Waveform Background**: Added professional-grade audio waveform visualization behind every line in the timeline. Features symmetric peaks, auto-normalization, and layout-safe rendering for high-precision synchronization.
+- **Intelligent Blank-Word Management**: 
+    - **Auto-Conversion**: Empty lines automatically become "Ghost" blocks when merged into other lines to preserve silence.
+    - **Smart Normalization**: Lines containing only blank words automatically revert to clean `[Empty]` placeholders after structural operations.
+- **Advanced Timeline Integrity Tools**:
+    - **Upgraded Hot Fix**: A one-click solution that now resolves word overlaps, fills timing gaps, and cleans up whitespace in a single pass.
+    - **Fix Jumps (Push Sequential)**: A new cascading shift tool that resolves line collisions by pushing subsequent lines forward, preserving original durations and phrasing.
+    - **Strict LRC Parsing**: The engine now strictly enforces line boundaries during import, automatically clamping word timestamps to prevent "backward jumps."
+- **Edit Modal Enhancements**:
+    - **Smarter Deletion**: Deleting words or placeholders (`\`) in the text modal now automatically merges their duration into the preceding word to fill the gap.
+    - **Partial Joining**: The "Join Words" tool now supports selected text ranges for granular syllable merging.
+    - **Refined Blank Removal**: The "Remove Blanks" tool now rejoins syllables perfectly without leaving orphaned spaces.
+    - **Improved Tokenization**: Special symbols (`\`, `"`) are now treated as independent tokens even when attached to words, preventing accidental word merging.
+- **UI/UX Refinements**: 
+    - **Scroll Preservation**: Maintains scroll position during all structural operations (merge, split, edit).
+    - **Muted Ghost Visuals**: Blank blocks now feature a muted background with a backdrop blur to make the background waveform less distracting.
+- **Performance Optimization**: Waveform caching and 60fps rendering ensure a lag-free experience even on low-end devices.
+- **Toolbar Refinement**: Synchronized action icons across the UI and added direct "Split" and "Smart Merge" buttons to the header toolbar. Improved mobile responsiveness for tool-heavy layouts.
+
+### v0.0.4
 
 - **Flexible Shift Control**: Added a new UI widget to shift time by custom millisecond amounts. Now supports shifting only selected lines or the whole timeline.
 - **Improved Search UI**: Moved the search box to the timeline header for better focus. Added a minimal "x" button to clear filters instantly.
@@ -134,6 +187,31 @@ For professional, high-precision work, please consider the following:
 - **Auto-Scroll Navigation**: The Up/Down navigation buttons now automatically scroll and center the active lyrics line in view, even when paused.
 - **UI structural Integrity**: Wrapped all button labels in spans to ensure robust responsive behavior and clean layout resets.
 - **UI Polish**: Added "Pro Tips" for audio precision and improved the placeholder instructions for new users.
+
+### v0.0.3
+
+**Major Features & Persistence**
+- **True Session Persistence**: Integrated IndexedDB to securely store audio and lyrics references. Your progress is now automatically saved and persists even after refreshing the page or closing the browser.
+- **Automatic Audio Restoration**: Audio sources now reconnect automatically in the background after a page refresh, ensuring sound is ready without manual re-loading.
+- **Asynchronous Initialization**: Improved startup performance by loading large assets in the background, keeping the UI responsive and instant.
+- **Drag & Drop Support**: You can now load audio or lyrics files by simply dragging them anywhere into the editor. Includes safety alerts to prevent accidental file replacement.
+
+**Workspace & Productivity**
+- **Mass Deletion**: Added a new "Delete Selected" tool and keyboard shortcut (**Delete**) to remove multiple lines at once.
+- **Quick Line Insertion**: Added a dedicated "Add New Line" button in the timeline header and shortcut (**N**) for faster editing.
+- **Improved Line Editing**: The "Edit Line Text" modal now automatically normalizes whitespace and newlines, providing a clean, single-line editing experience.
+- **Asset Management**: Refined the file eject/reload system with intuitive sync icons and full-filename tooltips on hover.
+- **Improved Undo/Redo**: The history system now tracks all actions, including asset management and line deletions.
+
+**Export Improvements**
+- **Smart Quick Export**: The **`E`** shortcut now automatically prioritizes **Word-Level (Karaoke)** formats. 
+- **TXT-to-TTML Mapping**: Plain text (.txt) files are now automatically quick-exported as **TTML Karaoke** files to preserve your timing work.
+- **Export Configuration**: Added a toggle in the export menu to control the automatic insertion of empty "clear screen" lines for LRC and TTML formats.
+
+**Technical Fixes**
+- Fixed the issue where audio would play without sound after a page refresh.
+- Improved text parsing to handle multi-line SRT/VTT cues more efficiently.
+- Fixed history reset bugs when loading new assets.
 
 ---
 

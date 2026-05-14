@@ -1,4 +1,4 @@
-// ── Database (IndexedDB) for True Persistence ──
+// â”€â”€ Database (IndexedDB) for True Persistence â”€â”€
 const DB_NAME = 'LyricsEditorDB', DB_STORE = 'files';
 function openDB() {
     return new Promise((resolve, reject) => {
@@ -37,13 +37,16 @@ async function deleteFileFromDB(key) {
     } catch(e) { console.error("DB Delete Failed", e); }
 }
 
-// ── Global State ──
-let audio = new Audio(), lines = [], isPlaying = false, isRepeat = false;
-let currentTime = 0, duration = 0, rafId = null, activeLineId = null;
+// â”€â”€ Global State â”€â”€
+let audio = new Audio(), lines = [];
+let currentTime = 0, duration = 0, rafId = null, activeLineId = null, lockedWord = null;
+let isPlaying = false, isRepeat = false, isWordRepeat = false, isSongRepeat = false;
+let isWaveformEnabled = true, isWordHighlightEnabled = true;
 let audioFullname = '', lyricsFullname = '';
 let lastAudioFile = null, lastLyricsFile = null;
 let history = [{lines:[], audioFN:'', lyricsFN:'', audioFull:'', lyricsFull:'', origFN:'lyrics'}], histIdx = 0;
-let lastImportFormat = 'lrc', audioFilename = '', lyricsFilename = '', isWordHighlightEnabled = true, originalFilename = 'lyrics', editingLine = null;
+let lastImportFormat = 'lrc', audioFilename = '', lyricsFilename = '', originalFilename = 'lyrics', editingLine = null;
+let audioBuffer = null, waveformCache = new Map(), waveformObserver = null;
 
 const $ = id => document.getElementById(id);
 const playBtn=$('btn-play-pause'), stopBtn=$('btn-stop'), repeatBtn=$('btn-repeat');
@@ -51,12 +54,12 @@ const timeDisp=$('time-display'), progFill=$('progress-fill'), volSlider=$('volu
 const container=$('timeline-container'), statL=$('stat-lines'), statW=$('stat-words');
 
 function fmt(s) {
-  if(isNaN(s))return'00:00.00';
-  const m=Math.floor(s/60),sc=Math.floor(s%60),ms=Math.floor((s%1)*100);
-  return`${String(m).padStart(2,'0')}:${String(sc).padStart(2,'0')}.${String(ms).padStart(2,'0')}`;
+  if(isNaN(s))return'00:00.000';
+  const m=Math.floor(s/60),sc=Math.floor(s%60),ms=Math.floor((s%1)*1000);
+  return`${String(m).padStart(2,'0')}:${String(sc).padStart(2,'0')}.${String(ms).padStart(3,'0')}`;
 }
 
-// ── History ──
+// â”€â”€ History â”€â”€
 function pushHistory() {
   const snap = {
     lines: JSON.parse(JSON.stringify(lines)),
@@ -67,10 +70,21 @@ function pushHistory() {
     origFN: originalFilename,
     audioSrc: audio.src
   };
-  history = history.slice(0, histIdx+1);
+  
+  // Don't push if it's the same as the current head (to avoid redundant undo steps)
+  const current = history[histIdx];
+  // More robust check for changes
+  if (current && JSON.stringify(current.lines) === JSON.stringify(snap.lines)) {
+      // Still update filenames/audio sources if they changed even if lines didn't
+      if (current.audioSrc === snap.audioSrc && current.audioFN === snap.audioFN && current.lyricsFN === snap.lyricsFN) {
+        return;
+      }
+  }
+
+  history = history.slice(0, histIdx + 1);
   history.push(snap);
-  if(history.length>50)history.shift();
-  histIdx = history.length-1;
+  if (history.length > 50) history.shift();
+  histIdx = history.length - 1;
   saveSession();
 }
 
@@ -84,7 +98,8 @@ function saveSession() {
             lyricsFull: lyricsFullname,
             origFN: originalFilename,
             duration: duration,
-            lastImportFormat: lastImportFormat
+            lastImportFormat: lastImportFormat,
+            isWaveformEnabled: isWaveformEnabled
         };
         localStorage.setItem('lyricseditor_session', JSON.stringify(session));
     } catch(e) { console.error("Auto-save failed", e); }
@@ -103,6 +118,11 @@ function loadSession() {
         originalFilename = snap.origFN || 'lyrics';
         duration = snap.duration || 0;
         lastImportFormat = snap.lastImportFormat || 'lrc';
+        if (snap.isWaveformEnabled !== undefined) {
+            isWaveformEnabled = snap.isWaveformEnabled;
+            const btn = $('btn-toggle-waveform');
+            if (btn) btn.style.color = isWaveformEnabled ? 'var(--accent)' : 'var(--text-muted)';
+        }
         
         // Initial history entry for the loaded session
         history = [{
@@ -126,20 +146,58 @@ function loadSession() {
     }
 }
 
+// â”€â”€ Modal History (Local to Edit Modal) â”€â”€
+let modalHistory = [];
+let modalHistIdx = -1;
+
+function pushModalHistory() {
+  const val = $('edit-text-input').value;
+  if (modalHistIdx >= 0 && modalHistory[modalHistIdx] === val) return;
+  modalHistory = modalHistory.slice(0, modalHistIdx + 1);
+  modalHistory.push(val);
+  if (modalHistory.length > 100) modalHistory.shift();
+  modalHistIdx = modalHistory.length - 1;
+}
+
+function modalUndo() {
+  if (modalHistIdx > 0) {
+    modalHistIdx--;
+    $('edit-text-input').value = modalHistory[modalHistIdx];
+    updateEditHighlighter();
+  }
+}
+
+function modalRedo() {
+  if (modalHistIdx < modalHistory.length - 1) {
+    modalHistIdx++;
+    $('edit-text-input').value = modalHistory[modalHistIdx];
+    updateEditHighlighter();
+  }
+}
+
 function applySnapshot(snap) {
+  if (!snap) return;
   lines = JSON.parse(JSON.stringify(snap.lines));
   audioFilename = snap.audioFN;
   lyricsFilename = snap.lyricsFN;
   audioFullname = snap.audioFull;
   lyricsFullname = snap.lyricsFull;
   originalFilename = snap.origFN;
-  if (audio.src !== snap.audioSrc) {
-      audio.src = snap.audioSrc || "";
-      if (audio.src) audio.load();
+  if (audio.src !== (snap.audioSrc || "")) {
+      try {
+          if (!snap.audioSrc) {
+              audio.removeAttribute('src');
+              audio.load();
+          } else {
+              audio.src = snap.audioSrc;
+              audio.load();
+          }
+      } catch (e) { console.warn("Failed to restore audio source", e); }
   }
   updateFileUI();
   renderTimeline();
   updateDisplay();
+  saveSession(); // Keep localStorage in sync with undo/redo
 }
 
 function undo() { if(histIdx>0){histIdx--; applySnapshot(history[histIdx]);} }
@@ -173,8 +231,10 @@ function updateFileUI() {
     }
 }
 
-// ── Render ──
+// â”€â”€ Render â”€â”€
 function renderTimeline() {
+  normalizeLines(lines);
+  const oldScroll = container.scrollTop;
   // Capture currently selected IDs before clearing
   const previouslySelected = new Set();
   document.querySelectorAll('.line-checkbox:checked').forEach(cb => {
@@ -192,6 +252,9 @@ function renderTimeline() {
         <span style="font-size:12px; opacity:0.7;">(or Drag & Drop files anywhere)</span>
         <div style="margin-top: 15px; font-size: 12px; font-weight: 500; color: var(--accent); opacity: 0.8;">
             <i class="fas fa-hand-pointer"></i> Drag words or boundaries to adjust timings
+        </div>
+        <div style="margin-top: 8px; font-size: 11px; opacity: 0.7; color: var(--text-main);">
+            <i class="fas fa-keyboard"></i> Press <b style="color:var(--accent)">K</b> to view all keyboard shortcuts
         </div>
         <div style="margin-top: 20px; font-size: 11px; opacity: 0.6; max-width: 400px; line-height: 1.5; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
             <strong>Pro Tip for High Precision:</strong><br>
@@ -214,16 +277,26 @@ function renderTimeline() {
     const isChecked = previouslySelected.has(line.id);
     tr.innerHTML=`<div class="track-controls"><input type="checkbox" class="line-checkbox" data-id="${line.id}" ${isChecked ? 'checked' : ''} style="cursor:pointer; margin-right:4px;" title="Select this line"><span style="color:var(--text-muted);font-size:11px;width:14px">${idx+1}</span><button class="track-play-btn" data-start="${line.startMs}" data-end="${line.endMs}"><i class="fas fa-play" style="font-size:9px;margin-left:1px"></i></button><div class="track-info">${fmt(line.startMs/1000)}</div></div><div class="track-content" id="trk-${line.id}"><div class="playback-indicator" id="pi-${line.id}"></div></div><div class="track-end-time">${fmt(line.endMs/1000)}</div><button class="icon-btn track-edit-btn" title="Edit Line Text"><i class="fas fa-edit"></i></button><button class="icon-btn track-delete-btn" title="Delete Line"><i class="fas fa-trash"></i></button>`;
     container.appendChild(tr);
+    // Observer for lazy-loading waveforms
     const tc = tr.querySelector('.track-content');
+    tc.dataset.lineId = line.id;
+
     const ws = (line.words && line.words.length > 0) ? line.words : [{ id: `pl-${line.id}`, text: (line.text || "").trim() || "[Empty]", startMs: line.startMs, endMs: line.endMs, isPl: true }];
     ws.forEach(w => {
       const el = document.createElement('div'); el.className='word-block'; el.id=`w-${w.id}`;
       if(w.isPl) el.style.opacity = '0.7';
-      el.innerHTML=`<div class="resize-handle left"></div><div class="word-text">${w.text}</div><div class="word-duration">${((w.endMs-w.startMs)/1000).toFixed(2)}s</div><div class="resize-handle right"></div>`;
+      const wText = (w.text || "").trim();
+      const isActuallyBlank = !wText || wText === "\\" || wText === "[Empty]" || wText === "\"";
+      if(isActuallyBlank) el.classList.add('blank-word');
+      
+      el.innerHTML=`<div class="resize-handle left"></div><div class="word-text">${w.text || ""}</div><div class="word-duration">${((w.endMs-w.startMs)/1000).toFixed(3)}s</div><div class="resize-handle right"></div>`;
       tc.appendChild(el);
       posWord(el, w, line);
       bindDrag(el, w, line, tc, w.isPl);
     });
+    
+    container.appendChild(tr);
+    
     tr.querySelector('.track-play-btn').onclick = () => {
       if (activeLineId === line.id && isPlaying) {
         stopPlay();
@@ -235,16 +308,63 @@ function renderTimeline() {
     tr.querySelector('.track-delete-btn').onclick = () => { lines=lines.filter(l=>l.id!==line.id); pushHistory(); renderTimeline(); };
     tr.querySelector('.track-edit-btn').onclick = () => {
       editingLine = line;
-      $('edit-text-input').value = line.text.replace(/\s+/g, ' ').trim();
+      // Show \ for blank words so users can preserve them
+      $('edit-text-input').value = (line.words && line.words.length > 0) 
+        ? line.words.map(w => w.text || "\\").join(' ') 
+        : line.text.replace(/\s+/g, ' ').trim();
+      $('edit-keep-structure').checked = false; // Default OFF
+      updateEditHighlighter();
+      
+      // Initialize Local Modal History
+      modalHistory = [];
+      modalHistIdx = -1;
+      pushModalHistory();
+
       $('edit-text-modal').style.display = 'flex';
       $('edit-text-input').focus();
+      
+      // Start active sync for scroll (fixes drag-drop scroll lag)
+      startEditSync();
     };
     
     container.appendChild(createAddLineBtn(idx+1));
   });
+
+  // Lazy load waveforms
+  if (audioBuffer && isWaveformEnabled) {
+    observeWaveforms();
+  }
+
   statL.textContent=lines.length; statW.textContent=tw;
   updateDisplay();
   updateSelectionCount();
+  container.scrollTop = oldScroll;
+}
+
+function observeWaveforms() {
+  if (waveformObserver) waveformObserver.disconnect();
+  waveformObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const tc = entry.target;
+        const lineId = parseInt(tc.dataset.lineId);
+        const line = lines.find(l => l.id === lineId);
+        if (line && audioBuffer && isWaveformEnabled) {
+          drawWaveformForLine(tc, line);
+          // We can keep observing if we want it to redraw on resize, 
+          // but for now let's just draw once per render.
+          waveformObserver.unobserve(tc);
+        }
+      }
+    });
+  }, { 
+    root: $('timeline-container'), 
+    rootMargin: '200px' // Pre-load waveforms 200px before they enter view
+  });
+
+  document.querySelectorAll('.track-content').forEach(tc => {
+    waveformObserver.observe(tc);
+  });
 }
 
 // Global click listener for timeline tracks
@@ -266,18 +386,19 @@ function insertBlankLine(idx) {
   let start = 0, end = 2000;
   if (idx === 0) {
     if (lines.length > 0) {
-      end = Math.max(0, lines[0].startMs - 50);
+      end = lines[0].startMs;
       start = Math.max(0, end - 2000);
     }
   } else if (idx >= lines.length) {
-    start = lines[lines.length-1].endMs + 50;
+    start = lines[lines.length-1].endMs;
     end = start + 2000;
+    if (duration > 0 && end > duration) end = duration;
+    if (end <= start) end = start + 2000;
   } else {
-    start = lines[idx-1].endMs + 50;
-    end = lines[idx].startMs - 50;
-    if (end < start) {
-      start = lines[idx-1].endMs;
-      end = lines[idx].startMs;
+    start = lines[idx-1].endMs;
+    end = lines[idx].startMs;
+    if (end <= start) {
+        return alert("No space between these lines to insert a new line.\nUse Shift Time or adjust timestamps to create a gap first.");
     }
   }
   const maxId = lines.reduce((max, l) => Math.max(max, l.id || 0), 0);
@@ -302,14 +423,14 @@ function posWord(el, w, line) {
   el.style.width = widthPercent + '%';
   
   const d = el.querySelector('.word-duration');
-  if(d) d.textContent = ((w.endMs - w.startMs) / 1000).toFixed(2) + 's';
+  if(d) d.textContent = ((w.endMs - w.startMs) / 1000).toFixed(3) + 's';
 }
 
-// ── Drag Logic ──
+// â”€â”€ Drag Logic â”€â”€
 function bindDrag(el, word, line, tc, isPl = false) {
   const lh=el.querySelector('.resize-handle.left'), rh=el.querySelector('.resize-handle.right');
   let mode=null, sx=0, snap={}, hasDragged=false;
-  const MIN=50; // 50ms min
+  const MIN=20; // 20ms min
 
   function getIdx(){return line.words.findIndex(w=>w.id===word.id);}
   function capture(){
@@ -371,6 +492,16 @@ function bindDrag(el, word, line, tc, isPl = false) {
       line.endMs = word.endMs;
       posWord(el, word, line);
     }
+    
+    // Live update waveform if it's a boundary change
+    if (audioBuffer && (!prev || !next)) {
+        const tr = document.getElementById(`tc-${line.id}`);
+        if (tr) {
+            const contentContainer = tr.querySelector('.track-content');
+            drawWaveformForLine(contentContainer, line);
+        }
+    }
+
     const tr = document.getElementById(`tc-${line.id}`);
     tr.querySelector('.track-info').textContent = fmt(line.startMs/1000);
     tr.querySelector('.track-end-time').textContent = fmt(line.endMs/1000);
@@ -390,10 +521,10 @@ function bindDrag(el, word, line, tc, isPl = false) {
   });
 }
 
-// ── Playback ──
+// â”€â”€ Playback â”€â”€
 function togglePlay(){
   if(audio.src){audio.paused?audio.play():audio.pause();}
-  else{isPlaying=!isPlaying;playBtn.innerHTML=isPlaying?'<i class="fas fa-pause"></i>':'<i class="fas fa-play"></i>';if(isPlaying)startTick();else cancelAnimationFrame(rafId);}
+  else{isPlaying=!isPlaying;playBtn.innerHTML=isPlaying?'<i class="fas fa-pause"></i>':'<i class="fas fa-play"></i>';if(isPlaying){startTick();centerActiveLine();}else cancelAnimationFrame(rafId);}
 }
 
 let lastT=0;
@@ -401,13 +532,38 @@ function startTick(){lastT=performance.now();rafId=requestAnimationFrame(tick);}
 function tick(now){
   if(!isPlaying)return;
   currentTime+=(now-lastT); lastT=now;
-  // Repeat logic: loop current line
-  if(isRepeat && activeLineId!==null){
-    const al=lines.find(l=>l.id===activeLineId);
-    if(al && currentTime>=al.endMs) currentTime=al.startMs;
+  // Repeat logic
+  const currentLine = lines.find(l => currentTime >= l.startMs && currentTime < l.endMs);
+  
+  if (isWordRepeat && currentLine && currentLine.words) {
+    if (!lockedWord || currentTime < lockedWord.startMs || currentTime > lockedWord.endMs + 50) {
+      lockedWord = currentLine.words.find(word => currentTime >= word.startMs && currentTime < word.endMs);
+    }
+    if (lockedWord && currentTime >= lockedWord.endMs - 15) {
+      currentTime = lockedWord.startMs;
+    }
+  } else if (isRepeat && currentLine) {
+    if (currentTime >= currentLine.endMs - 15) {
+      currentTime = currentLine.startMs;
+    }
+  } else if (isRepeat && activeLineId !== null) {
+    // Fallback for line repeat if currentTime just jumped out of bounds
+    const al = lines.find(l => l.id === activeLineId);
+    if (al && currentTime >= al.endMs - 15) {
+      currentTime = al.startMs;
+    }
   }
-  if(duration>0&&currentTime>=duration){
-    if(isRepeat){currentTime=0;}else{isPlaying=false;currentTime=0;playBtn.innerHTML='<i class="fas fa-play"></i>';updateDisplay();return;}
+  
+  if (duration > 0 && currentTime >= duration) {
+    if (isSongRepeat || isRepeat) {
+      currentTime = 0;
+    } else {
+      isPlaying = false;
+      currentTime = 0;
+      playBtn.innerHTML = '<i class="fas fa-play"></i>';
+      updateDisplay();
+      return;
+    }
   }
   updateDisplay();rafId=requestAnimationFrame(tick);
 }
@@ -420,10 +576,12 @@ function stopPlay(){
 
 function seekMs(ms){
   if(audio.src)audio.currentTime=ms/1000;
-  currentTime=ms;lastT=performance.now();updateDisplay();
+  currentTime=ms;lastT=performance.now();
+  lockedWord = null; // Reset lock on manual seek
+  updateDisplay();
 }
 
-// ── Display Update ──
+// â”€â”€ Display Update â”€â”€
 function updateDisplay(){
   const cs=currentTime/1000, ds=duration/1000;
   timeDisp.textContent=`${fmt(cs)} / ${fmt(ds)}`;
@@ -485,20 +643,40 @@ function updateDisplay(){
   });
 }
 
-// ── Audio Events ──
+// â”€â”€ Audio Events â”€â”€
 audio.addEventListener('timeupdate',()=>{currentTime=audio.currentTime*1000;updateDisplay();});
-audio.addEventListener('play',()=>{isPlaying=true;playBtn.innerHTML='<i class="fas fa-pause"></i>';startAudioTick();});
+audio.addEventListener('play',()=>{isPlaying=true;playBtn.innerHTML='<i class="fas fa-pause"></i>';startAudioTick();centerActiveLine();});
 audio.addEventListener('pause',()=>{isPlaying=false;playBtn.innerHTML='<i class="fas fa-play"></i>';cancelAnimationFrame(rafId);});
 audio.addEventListener('loadedmetadata',()=>{duration=audio.duration*1000;updateDisplay();});
-audio.addEventListener('ended',()=>{if(isRepeat){audio.currentTime=0;audio.play();}else{isPlaying=false;playBtn.innerHTML='<i class="fas fa-play"></i>';updateDisplay();}});
+audio.addEventListener('ended',()=>{
+    if(isSongRepeat || isRepeat){
+        audio.currentTime=0;
+        audio.play();
+    }else{
+        isPlaying=false;
+        playBtn.innerHTML='<i class="fas fa-play"></i>';
+        updateDisplay();
+    }
+});
 
 // High-precision ticker for audio (for smooth indicator)
 function startAudioTick(){
   const loop=()=>{
     if(!audio.paused){
       currentTime=audio.currentTime*1000;
-      // Line repeat with real audio
-      if(isRepeat&&activeLineId!==null){const al=lines.find(l=>l.id===activeLineId);if(al&&currentTime>=al.endMs)audio.currentTime=al.startMs/1000;}
+      // Repeat logic with real audio
+      const al = lines.find(l => currentTime >= l.startMs && currentTime < l.endMs);
+      if (isWordRepeat && al && al.words) {
+        if (!lockedWord || currentTime < lockedWord.startMs || currentTime > lockedWord.endMs + 50) {
+          lockedWord = al.words.find(word => currentTime >= word.startMs && currentTime < word.endMs);
+        }
+        if (lockedWord && currentTime >= lockedWord.endMs - 15) audio.currentTime = lockedWord.startMs / 1000;
+      } else if (isRepeat && al) {
+        if (currentTime >= al.endMs - 15) audio.currentTime = al.startMs / 1000;
+      } else if (isRepeat && activeLineId !== null) {
+        const lastL = lines.find(l => l.id === activeLineId);
+        if (lastL && currentTime >= lastL.endMs - 15) audio.currentTime = lastL.startMs / 1000;
+      }
       updateDisplay();
       rafId=requestAnimationFrame(loop);
     }
@@ -536,17 +714,39 @@ document.querySelector('.volume-control i').onclick = toggleMute;
 
 function toggleRepeat() {
     isRepeat = !isRepeat;
-    repeatBtn.style.color = isRepeat ? 'var(--accent)' : '';
+    if(isRepeat) { isWordRepeat = false; isSongRepeat = false; }
+    updateRepeatUI();
+}
+function toggleRepeatWord() {
+    isWordRepeat = !isWordRepeat;
+    if(isWordRepeat) { 
+        isRepeat = false; 
+        isSongRepeat = false; 
+        lockedWord = null; // Reset to lock onto current position
+    }
+    updateRepeatUI();
+}
+function toggleRepeatSong() {
+    isSongRepeat = !isSongRepeat;
+    if(isSongRepeat) { isRepeat = false; isWordRepeat = false; }
+    updateRepeatUI();
+}
+function updateRepeatUI() {
+    $('btn-repeat').style.color = isRepeat ? 'var(--accent)' : '';
+    $('btn-repeat-word').style.color = isWordRepeat ? 'var(--accent)' : '';
+    $('btn-repeat-song').style.color = isSongRepeat ? 'var(--accent)' : '';
 }
 
 playBtn.onclick=togglePlay;
 stopBtn.onclick=stopPlay;
-repeatBtn.onclick=toggleRepeat;
+$('btn-repeat').onclick=toggleRepeat;
+$('btn-repeat-word').onclick=toggleRepeatWord;
+$('btn-repeat-song').onclick=toggleRepeatSong;
 
 // Progress bar seek
 $('progress-bar').onclick=e=>{if(!duration)return;const r=$('progress-bar').getBoundingClientRect();seekMs(Math.max(0,(e.clientX-r.left)/r.width*duration));};
 
-// ── File Loading ──
+// â”€â”€ File Loading â”€â”€
 $('btn-load-audio').onclick=()=>$('input-audio').click();
 function handleAudioFile(f, isRestore = false) {
   if(f){
@@ -570,12 +770,20 @@ function handleAudioFile(f, isRestore = false) {
 
     const reader = new FileReader();
     reader.onload = (event) => {
+      const arrayBuffer = event.target.result;
+      // Clear cache and buffer immediately
+      waveformCache.clear();
+      audioBuffer = null;
+
       // Create a fresh Blob from the array buffer - this fixes demuxer and sound issues
-      const blob = new Blob([event.target.result], { type: f.type || 'audio/mpeg' });
+      const blob = new Blob([arrayBuffer], { type: f.type || 'audio/mpeg' });
       const url = URL.createObjectURL(blob);
       audio.src = url;
       audio.load(); 
       updateFileUI();
+      
+      // Decode audio for waveform
+      decodeAudioForWaveform(arrayBuffer);
     };
     reader.onerror = () => console.error("Error reading audio file");
     reader.readAsArrayBuffer(f);
@@ -590,11 +798,18 @@ $('input-audio').onchange=e=>{
 
 // Handle audio errors (Chromium PTS issues, corrupt FLAC, etc.)
 audio.onerror = () => {
-  if (!audio.src || audio.src === window.location.href) return; // Ignore intentional ejects
+  if (!audio.src || audio.src === "" || audio.src === window.location.href) return; // Ignore intentional ejects
   const err = audio.error;
   let msg = "Audio error occurred";
   let details = "";
   if (err) {
+    // If it's a blob URL and fails with code 4 or 2, it's likely expired.
+    // Silently ignore instead of showing a confusing modal.
+    if (audio.src.startsWith('blob:') && (err.code === 4 || err.code === 2)) {
+        console.warn("Audio Blob URL expired or invalid. Ignoring error.");
+        return;
+    }
+
     switch (err.code) {
       case 1: msg = "Audio fetching process aborted."; break;
       case 2: msg = "Network error while loading audio."; break;
@@ -606,7 +821,6 @@ audio.onerror = () => {
     details = err.message ? `\nBrowser Details: ${err.message}` : "";
     console.error("Audio Error Code:", err.code, "Message:", err.message);
   } else {
-      // If there's an error event but no error object, it might be an empty src issue
       return; 
   }
   
@@ -622,27 +836,96 @@ audio.onerror = () => {
 $('btn-load-lyrics').onclick=()=>$('input-lyrics').click();
 function handleLyricsFile(f) {
   if(!f) return;
-  lastLyricsFile = f;
-  saveFileToDB('lastLyrics', f); // Persist to DB
   stopPlay();
-  lyricsFullname = f.name;
-  lyricsFilename = f.name.replace(/\.[^/.]+$/, "");
-  
-  // Update name if no audio is present or if we are using the default "lyrics" name
-  if (!audioFilename || originalFilename === 'lyrics') {
-      originalFilename = lyricsFilename;
-  }
-  
-  updateFileUI();
 
   const r=new FileReader();
   r.onload=ev=>{
-    const fmt=detectFormat(f.name,ev.target.result);
+    const content = ev.target.result;
+    const fmt=detectFormat(f.name, content);
     lastImportFormat = fmt;
     
-    lines=parseContent(ev.target.result,fmt);
-    const meta = parseMetadata(ev.target.result, fmt);
+    const segments = detectSegments(content, fmt);
+    if (segments.length > 1) {
+        showImportSegmentsModal(segments, fmt, f);
+        return;
+    }
+    
+    processImportedContent(content, fmt, f);
+  };
+  r.readAsText(f);
+}
+
+let pendingSegments = [];
+let pendingFormat = '';
+let pendingFile = null;
+
+function showImportSegmentsModal(segments, format, file) {
+    pendingSegments = segments;
+    pendingFormat = format;
+    pendingFile = file;
+    const list = $('import-segments-list');
+    list.innerHTML = '';
+    
+    // Auto-select logic for initial state
+    let maxLines = -1, primaryIdx = 0;
+    let minLines = Infinity, refIdx = -1;
+    const parsed = segments.map(seg => parseContent(seg, format));
+
+    parsed.forEach((cues, i) => {
+        if (cues.length > maxLines) { maxLines = cues.length; primaryIdx = i; }
+    });
+    parsed.forEach((cues, i) => {
+        if (i !== primaryIdx && cues.length < minLines && cues.length > 0) { minLines = cues.length; refIdx = i; }
+    });
+
+    segments.forEach((seg, i) => {
+        const cues = parsed[i];
+        const div = document.createElement('div');
+        div.className = 'segment-item';
+        div.style = 'display:grid; grid-template-columns: 1fr 60px 60px 70px; gap:10px; align-items:center; padding:10px 12px; background:var(--bg-dark); border:1px solid var(--border); border-radius:8px;';
+        
+        div.innerHTML = `
+            <div style="display:flex; flex-direction:column; gap:2px; cursor:pointer; flex:1;" onclick="applyImportSegment(${i})">
+                <span style="font-weight:600; font-size:13px; color:var(--text-main);">Segment ${i+1}</span>
+                <span style="font-size:11px; color:var(--text-muted);">${cues.length} lines detected</span>
+            </div>
+            <div style="text-align:center;"><input type="radio" name="seg-primary" value="${i}" ${i===primaryIdx?'checked':''}></div>
+            <div style="text-align:center;"><input type="radio" name="seg-ref" value="${i}" ${i===refIdx?'checked':''}></div>
+            <div style="text-align:center; padding-left:10px;">
+                <button class="btn btn-sm" style="padding: 4px 8px; font-size:10px;" onclick="applyImportSegment(${i})" title="Quick Load this segment only">Load</button>
+            </div>
+        `;
+        list.appendChild(div);
+    });
+    
+    $('import-segments-modal').style.display = 'flex';
+}
+
+function applyImportSegment(index) {
+    const content = index === -1 ? pendingSegments.join('\n\n') : pendingSegments[index];
+    processImportedContent(content, pendingFormat, pendingFile);
+    $('import-segments-modal').style.display = 'none';
+    pendingFile = null;
+}
+
+function processImportedContent(content, fmt, fileObj = null) {
+    if (fileObj) {
+        lastLyricsFile = fileObj;
+        saveFileToDB('lastLyrics', fileObj);
+        lyricsFullname = fileObj.name;
+        lyricsFilename = fileObj.name.replace(/\.[^/.]+$/, "");
+        
+        // Update name if no audio is present or if we are using the default "lyrics" name
+        if (!audioFilename || originalFilename === 'lyrics') {
+            originalFilename = lyricsFilename;
+        }
+        updateFileUI();
+    }
+
+    lines=parseContent(content,fmt);
+    const meta = parseMetadata(content, fmt);
     autoFillWords(lines);
+    normalizeLines(lines);
     let wid=1; lines.forEach(l=>{if(l.words)l.words.forEach(w=>w.id=wid++);});
     
     // Always calculate a reasonable project duration if no audio is loaded
@@ -654,15 +937,69 @@ function handleLyricsFile(f) {
     pushHistory();
     renderTimeline();
     updateDisplay();
-  };
-  r.readAsText(f);
 }
+
+$('import-segments-all').onclick = () => applyImportSegment(-1);
+$('import-segments-close-top').onclick = () => {
+    $('import-segments-modal').style.display = 'none';
+    pendingFile = null;
+};
+
+$('import-segments-smart').onclick = () => {
+    const pRadio = document.querySelector('input[name="seg-primary"]:checked');
+    const rRadio = document.querySelector('input[name="seg-ref"]:checked');
+    
+    if (!pRadio || !rRadio) return alert("Select both a Primary and a Reference segment.");
+    
+    const pIdx = parseInt(pRadio.value);
+    const rIdx = parseInt(rRadio.value);
+    
+    if (pIdx === rIdx) return alert("Primary and Reference segments must be different.");
+    
+    const primaryCues = parseContent(pendingSegments[pIdx], pendingFormat);
+    const refCues = parseContent(pendingSegments[rIdx], pendingFormat);
+    
+    if (primaryCues.length <= refCues.length) {
+        return alert(`Primary segment (${primaryCues.length} lines) should ideally have more lines than Reference (${refCues.length} lines) to merge correctly.`);
+    }
+
+    // Similarity Check
+    const getWords = (cs) => cs.map(c => c.text).join(' ').toLowerCase().split(/\s+/).filter(w => w.length > 3);
+    const pWords = new Set(getWords(primaryCues));
+    const rWords = getWords(refCues);
+    if (pWords.size > 0 && rWords.length > 0) {
+        const matches = rWords.filter(w => pWords.has(w)).length;
+        const ratio = matches / rWords.length;
+        if (ratio < 0.2) {
+            if (!confirm(`Warning: Selected segments have very low text similarity (${Math.round(ratio*100)}%). They might be different languages or unrelated tracks. Continue anyway?`)) return;
+        }
+    }
+
+    lines = primaryCues;
+    autoFillWords(lines);
+    applySmartMergeFromCues(refCues, pendingFormat);
+    
+    // Also apply the filename since this was a "Smart Import" (which replaces/initializes the timeline)
+    if (pendingFile) {
+        lastLyricsFile = pendingFile;
+        saveFileToDB('lastLyrics', pendingFile);
+        lyricsFullname = pendingFile.name;
+        lyricsFilename = pendingFile.name.replace(/\.[^/.]+$/, "");
+        if (!audioFilename || originalFilename === 'lyrics') {
+            originalFilename = lyricsFilename;
+        }
+        updateFileUI();
+    }
+
+    $('import-segments-modal').style.display = 'none';
+};
+
 $('input-lyrics').onchange=e=>{
   handleLyricsFile(e.target.files[0]);
   e.target.value = "";
 };
 
-// ── Dropdown Menus ──
+// â”€â”€ Dropdown Menus â”€â”€
 function setupDropdown(btnId, menuId){
   const btn=$(btnId), menu=$(menuId);
   btn.onclick=e=>{e.stopPropagation();document.querySelectorAll('.dropdown-menu.open').forEach(m=>{if(m!==menu)m.classList.remove('open');});menu.classList.toggle('open');};
@@ -671,7 +1008,7 @@ setupDropdown('btn-tools','tools-menu');
 setupDropdown('btn-export','export-menu');
 document.addEventListener('click',()=>document.querySelectorAll('.dropdown-menu.open').forEach(m=>m.classList.remove('open')));
 
-// ── Export ──
+// â”€â”€ Export â”€â”€
 function performExport(f, isQuick = false) {
   if(!f || !lines.length) return;
   
@@ -689,7 +1026,7 @@ function performExport(f, isQuick = false) {
   // Only use autoEmpty if it's a manual export and the toggle is checked.
   // For Quick Export, we want it to match exactly what's in the editor.
   const autoEmpty = isQuick ? false : ($('toggle-auto-empty-lines') ? $('toggle-auto-empty-lines').checked : false);
-  const ext={lrc:'lrc',lrc_enhanced:'lrc',srt:'srt',vtt:'vtt',vtt_karaoke:'vtt',ttml:'ttml',ttml_karaoke:'ttml',srv1:'srv1',srv2:'srv2',srv3:'srv3',srv3_karaoke:'srv3',json:'json',json3:'json',lyricsfile:'lyricsfile',txt:'txt'}[targetFormat]||'txt';
+  const ext={lrc:'lrc',lrc_enhanced:'lrc',srt:'srt',vtt:'vtt',vtt_karaoke:'vtt',ttml:'ttml',ttml_karaoke:'ttml',srv1:'srv1',srv2:'srv2',srv3:'srv3',srv3_karaoke:'srv3',json:'json',json3:'json',lyricsfile:'lyricsfile',txt:'txt',audacity:'txt',audacity_karaoke:'txt'}[targetFormat]||'txt';
   
   let finalBaseName = originalFilename;
   if (audioFilename && lyricsFilename && audioFilename !== lyricsFilename) {
@@ -698,7 +1035,12 @@ function performExport(f, isQuick = false) {
       finalBaseName = audioFilename || lyricsFilename || "lyrics";
   }
 
-  const name = `${finalBaseName} - lyricseditor.${ext}`;
+  let name = `${finalBaseName} - lyricseditor.${ext}`;
+  if (targetFormat === 'audacity') {
+      name = `${finalBaseName} - Audacity Label.txt`;
+  } else if (targetFormat === 'audacity_karaoke') {
+      name = `${finalBaseName} - Audacity Label (Words).txt`;
+  }
   downloadFile(exportAs(lines.map(l=>({startMs:l.startMs,endMs:l.endMs,text:l.text,words:l.words})), targetFormat, duration, { autoEmptyLines: autoEmpty }), name);
 }
 
@@ -709,11 +1051,95 @@ $('export-menu').onclick=e=>{
   $('export-menu').classList.remove('open');
 };
 
-// ── Tools ──
+// â”€â”€ Tools â”€â”€
 $('tool-shift-time').onclick=()=>{$('tools-menu').classList.remove('open');$('shift-modal').style.display='flex';$('shift-amount').value=0;};
 $('tool-find-replace').onclick=()=>{$('tools-menu').classList.remove('open');$('find-replace-modal').style.display='flex';};
 $('tool-sort-rows').onclick=()=>{lines.sort((a,b)=>a.startMs-b.startMs);pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
 $('tool-remove-empty-lines').onclick=()=>{lines=lines.filter(l=>(l.words&&l.words.length>0)||l.text.trim());pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
+// --- Gap Filling Logic ---
+function fillGapToStart() {
+  if (lines.length === 0) return false;
+  lines.sort((a,b) => a.startMs - b.startMs);
+  if (lines[0].startMs > 10) {
+    const maxId = lines.reduce((max, l) => Math.max(max, l.id || 0), 0);
+    lines.unshift({
+      id: maxId + 1,
+      startMs: 0,
+      endMs: lines[0].startMs,
+      text: "",
+      words: []
+    });
+    return true;
+  }
+  return false;
+}
+
+function fillGapsBetweenLines() {
+  if(lines.length < 1) return false;
+  lines.sort((a,b)=>a.startMs-b.startMs);
+  let changed = false;
+  const newLines = [];
+  let maxId = lines.reduce((max, l) => Math.max(max, l.id || 0), 0);
+  for(let i=0; i<lines.length; i++){
+    newLines.push(lines[i]);
+    if(i < lines.length - 1){
+      const currentEnd = lines[i].endMs;
+      const nextStart = lines[i+1].startMs;
+      if(nextStart - currentEnd > 10){
+        maxId++;
+        newLines.push({
+          id: maxId,
+          startMs: currentEnd,
+          endMs: nextStart,
+          text: "",
+          words: []
+        });
+        changed = true;
+      }
+    }
+  }
+  if (changed) lines = newLines;
+  return changed;
+}
+
+function fillGapToEnd() {
+  if(!duration || duration <= 0) return false;
+  lines.sort((a,b) => a.startMs - b.startMs);
+  const lastLine = lines.length > 0 ? lines[lines.length - 1] : null;
+  const lastEnd = lastLine ? lastLine.endMs : 0;
+  if(duration - lastEnd > 10){
+    const maxId = lines.reduce((max, l) => Math.max(max, l.id || 0), 0);
+    lines.push({
+      id: maxId + 1,
+      startMs: lastEnd,
+      endMs: duration,
+      text: "",
+      words: []
+    });
+    return true;
+  }
+  return false;
+}
+
+$('tool-fill-gap-to-start').onclick=()=>{
+  if (fillGapToStart()) { pushHistory(); renderTimeline(); }
+  $('tools-menu').classList.remove('open');
+};
+$('tool-fill-gaps-with-lines').onclick=()=>{
+  if (fillGapsBetweenLines()) { pushHistory(); renderTimeline(); }
+  $('tools-menu').classList.remove('open');
+};
+$('tool-fill-gap-to-end').onclick=()=>{
+  if (fillGapToEnd()) { pushHistory(); renderTimeline(); }
+  $('tools-menu').classList.remove('open');
+};
+$('tool-fill-all-gaps').onclick=()=>{
+  let c1 = fillGapToStart();
+  let c2 = fillGapsBetweenLines();
+  let c3 = fillGapToEnd();
+  if (c1 || c2 || c3) { pushHistory(); renderTimeline(); }
+  $('tools-menu').classList.remove('open');
+};
 $('tool-clear-all').onclick=()=>{
     if(confirm("Are you sure you want to clear all lines? This will reset the timeline.")) {
         lines = [];
@@ -730,12 +1156,214 @@ $('tool-clear-session').onclick=()=>{
     }
 };
 
-$('tool-remove-overlaps').onclick=()=>{for(let i=0;i<lines.length-1;i++){if(lines[i].endMs>lines[i+1].startMs){lines[i].endMs=lines[i+1].startMs;if(lines[i].words&&lines[i].words.length)lines[i].words[lines[i].words.length-1].endMs=Math.min(lines[i].words[lines[i].words.length-1].endMs,lines[i+1].startMs);}}pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
-$('tool-merge-lines').onclick=()=>{const checks=Array.from(document.querySelectorAll('.line-checkbox:checked')).map(c=>parseInt(c.dataset.id));if(checks.length>1){const selected=lines.filter(l=>checks.includes(l.id));const first=selected[0],last=selected[selected.length-1];first.endMs=last.endMs;first.text=selected.map(l=>(l.text||"").trim()).filter(t=>t).join(' ');first.words=selected.flatMap(l=>l.words||[]);lines=lines.filter(l=>l.id===first.id||!checks.includes(l.id));pushHistory();renderTimeline();}$('tools-menu').classList.remove('open');};
+function mergeSelectedLines() {
+  const checks = Array.from(document.querySelectorAll('.line-checkbox:checked')).map(c => parseInt(c.dataset.id));
+  if (checks.length > 1) {
+    const selected = lines.filter(l => checks.includes(l.id));
+    const first = selected[0], last = selected[selected.length - 1];
+    first.endMs = last.endMs;
+    first.text = selected.map(l => (l.text || "").trim()).filter(t => t).join(' ');
+
+    // Collect words from all selected lines
+    // Empty lines (no words, no text) become blank word blocks using line timestamps
+    const allWords = [];
+    selected.forEach(l => {
+      if (l.words && l.words.length > 0) {
+        l.words.forEach(w => {
+          const newWord = { ...w };
+          if (allWords.length > 0) {
+            const prevWord = allWords[allWords.length - 1];
+            if (prevWord.endMs < newWord.startMs) {
+              prevWord.endMs = newWord.startMs;
+            }
+          }
+          allWords.push(newWord);
+        });
+      } else {
+        // Preserve empty lines as blank words during merge
+        if (allWords.length > 0) {
+          const prevWord = allWords[allWords.length - 1];
+          if (prevWord.endMs < l.startMs) prevWord.endMs = l.startMs;
+        }
+        allWords.push({ id: Date.now() + Math.random(), text: "", startMs: l.startMs, endMs: l.endMs });
+      }
+    });
+    first.words = allWords;
+    // Ensure the merged line's words cover the full duration without gaps
+    autoFillWords([first]);
+    // If the merged result is purely blank, revert to empty line placeholder
+    normalizeLines([first]);
+
+    lines = lines.filter(l => l.id === first.id || !checks.includes(l.id));
+    pushHistory();
+    renderTimeline();
+  } else {
+    alert("Please select at least two lines to merge.");
+  }
+}
+
+function applySmartMerge(refContent, refFormat) {
+  const refCues = parseContent(refContent, refFormat);
+  applySmartMergeFromCues(refCues, refFormat);
+}
+
+function applySmartMergeFromCues(refCues, refFormat) {
+  if (!lines.length) return;
+  autoFillWords(lines);
+  let allWords = lines.flatMap(l => l.words || []);
+  if (!allWords.length) return alert("No words found to merge.");
+
+  if (!refCues.length) return alert("No lines found in reference.");
+
+  const newLines = [];
+  let wordIdx = 0;
+  const isTimestampBased = refFormat !== 'txt';
+
+  refCues.forEach((refCue, idx) => {
+    const refText = refCue.text.trim();
+    let lineWords = [];
+
+    if (isTimestampBased) {
+      const nextStart = (idx < refCues.length - 1) ? refCues[idx + 1].startMs : Infinity;
+      while (wordIdx < allWords.length && allWords[wordIdx].startMs < nextStart) {
+        lineWords.push(allWords[wordIdx]);
+        wordIdx++;
+      }
+    } else {
+      const refWordsCount = refText.split(/\s+/).filter(w => w).length;
+      let addedNonEmpty = 0;
+      while (wordIdx < allWords.length && addedNonEmpty < refWordsCount) {
+        const w = allWords[wordIdx];
+        lineWords.push(w);
+        if (w.text && w.text.trim()) {
+          addedNonEmpty++;
+        }
+        wordIdx++;
+      }
+      // Peek ahead: if there are trailing blank words before the next non-empty word, 
+      // include them in the current line to preserve the silence.
+      while (wordIdx < allWords.length && (!allWords[wordIdx].text || !allWords[wordIdx].text.trim())) {
+        lineWords.push(allWords[wordIdx]);
+        wordIdx++;
+      }
+    }
+
+    // Preserve the line if it has words OR if the reference specifically had an empty line/cue
+    if (lineWords.length > 0 || refText === "") {
+      const start = lineWords.length > 0 ? lineWords[0].startMs : (newLines.length > 0 ? newLines[newLines.length - 1].endMs : refCue.startMs);
+      let end = lineWords.length > 0 ? lineWords[lineWords.length - 1].endMs : (isTimestampBased ? refCue.endMs : start + 500);
+      
+      // For timestamp based empty lines, ensure they don't overlap with the next word's start
+      if (lineWords.length === 0 && isTimestampBased && wordIdx < allWords.length) {
+          end = Math.min(end, allWords[wordIdx].startMs);
+      }
+
+      newLines.push({
+        id: idx + 1,
+        startMs: start,
+        endMs: Math.max(start, end),
+        text: lineWords.map(w => w.text).join(' '),
+        words: lineWords.length > 0 ? lineWords.map((w, widx) => ({ ...w, id: (idx + 1) * 1000 + widx + 1 })) : null
+      });
+    }
+  });
+
+  if (wordIdx < allWords.length) {
+    const rem = allWords.slice(wordIdx);
+    newLines.push({
+      id: newLines.length + 1,
+      startMs: rem[0].startMs,
+      endMs: rem[rem.length - 1].endMs,
+      text: rem.map(w => w.text).join(' '),
+      words: rem.map((w, widx) => ({ ...w, id: (newLines.length) * 1000 + widx + 1 }))
+    });
+  }
+  
+  autoFillWords(newLines);
+  lines = newLines;
+  pushHistory();
+  renderTimeline();
+  updateDisplay();
+}
+
+$('tool-remove-overlaps').onclick=()=>{
+    const minD = 20;
+    for (let i = 0; i < lines.length - 1; i++) {
+        if (lines[i].endMs > lines[i + 1].startMs) {
+            // Fix line overlap
+            lines[i].endMs = lines[i + 1].startMs;
+            // Fix word overlaps within that line
+            if (lines[i].words && lines[i].words.length > 0) {
+                lines[i].words.forEach(w => {
+                    if (w.startMs > lines[i].endMs) w.startMs = Math.max(lines[i].startMs, lines[i].endMs - minD);
+                    if (w.endMs > lines[i].endMs) w.endMs = lines[i].endMs;
+                });
+                for (let j = 0; j < lines[i].words.length - 1; j++) {
+                    if (lines[i].words[j].endMs > lines[i].words[j + 1].startMs) {
+                        lines[i].words[j + 1].startMs = lines[i].words[j].endMs;
+                        if (lines[i].words[j + 1].endMs < lines[i].words[j + 1].startMs + minD) {
+                            lines[i].words[j + 1].endMs = lines[i].words[j + 1].startMs + minD;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    pushHistory(); renderTimeline(); $('tools-menu').classList.remove('open');
+};
+
+$('tool-sequentialize-cascade').onclick = () => {
+    let changed = false;
+    for (let i = 0; i < lines.length - 1; i++) {
+        if (lines[i].endMs > lines[i + 1].startMs) {
+            const diff = lines[i].endMs - lines[i + 1].startMs;
+            // Push this line and all subsequent lines forward
+            for (let k = i + 1; k < lines.length; k++) {
+                lines[k].startMs += diff;
+                lines[k].endMs += diff;
+                if (lines[k].words) {
+                    lines[k].words.forEach(w => {
+                        w.startMs += diff;
+                        w.endMs += diff;
+                    });
+                }
+            }
+            changed = true;
+        }
+    }
+    if (changed) {
+        pushHistory();
+        renderTimeline();
+    }
+    $('tools-menu').classList.remove('open');
+};
+$('tool-merge-lines').onclick = () => { mergeSelectedLines(); $('tools-menu').classList.remove('open'); };
+$('btn-merge-header').onclick = mergeSelectedLines;
+
+$('btn-smart-merge-header').onclick = () => $('smart-merge-modal').style.display = 'flex';
+$('tool-smart-merge').onclick = () => { $('tools-menu').classList.remove('open'); $('smart-merge-modal').style.display = 'flex'; };
+
+$('smart-merge-cancel').onclick = () => $('smart-merge-modal').style.display = 'none';
+$('smart-merge-close-top').onclick = () => $('smart-merge-modal').style.display = 'none';
+$('smart-merge-select-file').onclick = () => {
+    $('smart-merge-modal').style.display = 'none';
+    $('input-smart-merge').click();
+};
+
+$('input-smart-merge').onchange = e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    const content = ev.target.result;
+    applySmartMerge(content, detectFormat(f.name, content));
+  };
+  r.readAsText(f);
+  e.target.value = '';
+};
 
 let linesToSplit = [];
-$('tool-split-lines').onclick=()=>{
-  $('tools-menu').classList.remove('open');
+function openSplitModal() {
   const checks=Array.from(document.querySelectorAll('.line-checkbox:checked')).map(c=>parseInt(c.dataset.id));
   if(checks.length === 0) return alert("Please select at least one line to split.");
   linesToSplit = lines.filter(l=>checks.includes(l.id));
@@ -757,6 +1385,12 @@ $('tool-split-lines').onclick=()=>{
     $('split-word-preview').textContent = "Auto only for multiple lines";
   }
   $('split-line-modal').style.display='flex';
+}
+
+$('btn-split-header').onclick = openSplitModal;
+$('tool-split-lines').onclick = () => {
+  $('tools-menu').classList.remove('open');
+  openSplitModal();
 };
 
 $('split-cancel').onclick = () => $('split-line-modal').style.display='none';
@@ -819,17 +1453,111 @@ $('format-cancel').onclick=()=>$('format-text-modal').style.display='none';
 const applyFormat=(type)=>{const checks=document.querySelectorAll('.line-checkbox:checked');const sIds=Array.from(checks).map(c=>parseInt(c.dataset.id));const tgts=sIds.length?lines.filter(l=>sIds.includes(l.id)):lines;tgts.forEach(l=>{if(type==='upper')l.text=l.text.toUpperCase();else if(type==='lower')l.text=l.text.toLowerCase();else if(type==='title')l.text=l.text.split(' ').map(w=>w?w[0].toUpperCase()+w.slice(1).toLowerCase():'').join(' ');else if(type==='sentence')l.text=l.text?l.text[0].toUpperCase()+l.text.slice(1).toLowerCase():'';if(l.words&&l.words.length===l.text.split(' ').length){const ws=l.text.split(' ');l.words.forEach((w,i)=>w.text=ws[i]);}});pushHistory();renderTimeline();$('format-text-modal').style.display='none';};
 $('format-title-case').onclick=()=>applyFormat('title');$('format-sentence-case').onclick=()=>applyFormat('sentence');$('format-uppercase').onclick=()=>applyFormat('upper');$('format-lowercase').onclick=()=>applyFormat('lower');
 
-$('tool-remove-punct').onclick=()=>{lines.forEach(l=>{l.text=l.text.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()♪]/g,"");if(l.words)l.words.forEach(w=>w.text=w.text.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()♪]/g,""));});pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
+$('tool-remove-punct').onclick=()=>{lines.forEach(l=>{l.text=l.text.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()â™ª]/g,"");if(l.words)l.words.forEach(w=>w.text=w.text.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()â™ª]/g,""));});pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
 $('tool-clear-words').onclick=()=>{lines.forEach(l=>l.words=[]);pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
 $('tool-distribute-words').onclick=()=>{const checks=document.querySelectorAll('.line-checkbox:checked');const sIds=Array.from(checks).map(c=>parseInt(c.dataset.id));const tgts=sIds.length?lines.filter(l=>sIds.includes(l.id)):lines;tgts.forEach(l=>{if(l.words&&l.words.length){const p=(l.endMs-l.startMs)/l.words.length;l.words.forEach((w,i)=>{w.startMs=Math.round(l.startMs+p*i);w.endMs=Math.round(l.startMs+p*(i+1));});}});pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
+$('tool-merge-words-in-lines').onclick=()=>{
+  const checks=document.querySelectorAll('.line-checkbox:checked');
+  const sIds=Array.from(checks).map(c=>parseInt(c.dataset.id));
+  const tgts=sIds.length?lines.filter(l=>sIds.includes(l.id)):lines;
+  tgts.forEach(l=>{
+    if(l.words && l.words.length > 0){
+      const startMs = l.words[0].startMs;
+      const endMs = l.words[l.words.length - 1].endMs;
+      l.words = [{ id: Date.now() + Math.random(), text: l.text.trim(), startMs, endMs }];
+    }
+  });
+  pushHistory();renderTimeline();$('tools-menu').classList.remove('open');
+};
+
+$('tool-join-words').onclick=()=>{
+  const checks=document.querySelectorAll('.line-checkbox:checked');
+  const sIds=Array.from(checks).map(c=>parseInt(c.dataset.id));
+  const tgts=sIds.length?lines.filter(l=>sIds.includes(l.id)):lines;
+  tgts.forEach(l=>{
+    l.text = l.text.replace(/\s+/g, '');
+    if(l.words && l.words.length > 0){
+        const startMs = l.words[0].startMs;
+        const endMs = l.words[l.words.length - 1].endMs;
+        l.words = [{ id: Date.now() + Math.random(), text: l.text, startMs, endMs }];
+    }
+  });
+  pushHistory();renderTimeline();$('tools-menu').classList.remove('open');
+};
 
 $('tool-auto-karaoke').onclick=()=>{autoFillWords(lines);let wid=1;lines.forEach(l=>{if(l.words)l.words.forEach(w=>w.id=wid++);});pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
 $('tool-fill-gaps').onclick=()=>{
   lines.forEach(c=>{if(c.words&&c.words.length){c.words[0].startMs=c.startMs;for(let i=0;i<c.words.length-1;i++)c.words[i].endMs=c.words[i+1].startMs;c.words[c.words.length-1].endMs=c.endMs;}});
   pushHistory();renderTimeline();$('tools-menu').classList.remove('open');
 };
+$('tool-remove-word-overlaps').onclick=()=>{
+  lines.forEach(l=>{
+    if(l.words && l.words.length > 0){
+      const minD = 20;
+      // First pass: ensure all words have min duration
+      l.words.forEach(w => {
+        if(w.endMs < w.startMs + minD) w.endMs = w.startMs + minD;
+      });
+      // Second pass: resolve overlaps sequentially
+      for(let i=0; i<l.words.length-1; i++){
+        if(l.words[i].endMs > l.words[i+1].startMs){
+          l.words[i+1].startMs = l.words[i].endMs;
+          if(l.words[i+1].endMs < l.words[i+1].startMs + minD){
+            l.words[i+1].endMs = l.words[i+1].startMs + minD;
+          }
+        }
+      }
+      // Final check: clamp to line end if possible, but respect min duration
+      if(l.words[l.words.length-1].endMs > l.endMs) {
+          // Try to fit the words back into the line if they were pushed out
+          if (l.words[0].startMs >= l.startMs) {
+              // Only pull back if it doesn't break min duration
+              // But for simplicity, we just let it exceed if it must, or clamp if it can.
+              l.words[l.words.length-1].endMs = Math.max(l.words[l.words.length-1].startMs + minD, l.endMs);
+          }
+      }
+    }
+  });
+  pushHistory();renderTimeline();$('tools-menu').classList.remove('open');
+};
 $('tool-remove-empty').onclick=()=>{
-  lines.forEach(l=>{if(l.words)l.words=l.words.filter(w=>w.text.trim());});
+  lines.forEach(l=>{
+    if(!l.words || !l.words.length) return;
+    // First: drop truly invalid words (zero-duration blanks, 0/0 timestamps)
+    l.words = l.words.filter(w => {
+        const t = (w.text || "").trim();
+        if (t && t !== "\\" && t !== "\"") return true; // Keep words with real text
+        // Drop blank words or "\" with zero or negative duration
+        if (w.endMs <= w.startMs) return false;
+        // Drop blank words or "\" with zero timestamps
+        if (w.startMs === 0 && w.endMs === 0) return false;
+        return true; // Keep blank words with valid duration
+    });
+    if(l.words.length < 2) return;
+    const newWs = [];
+    l.words.forEach((w, i) => {
+      if(w.text.trim()) {
+        newWs.push({...w});
+      } else {
+        if(newWs.length > 0) {
+          // Merge into previous
+          newWs[newWs.length - 1].endMs = w.endMs;
+        } else {
+          // It's at the start, keep as temp placeholder
+          newWs.push({...w, text: ""});
+        }
+      }
+    });
+    // Second pass to merge start blanks into the first non-blank
+    let finalWs = [];
+    let firstRealIdx = newWs.findIndex(w => w.text.trim());
+    if (firstRealIdx !== -1) {
+        const startMs = newWs[0].startMs;
+        finalWs = newWs.slice(firstRealIdx);
+        finalWs[0].startMs = startMs;
+    }
+    l.words = finalWs;
+  });
   pushHistory();renderTimeline();$('tools-menu').classList.remove('open');
 };
 $('tool-compact-ws').onclick=()=>{
@@ -837,18 +1565,78 @@ $('tool-compact-ws').onclick=()=>{
   pushHistory();renderTimeline();$('tools-menu').classList.remove('open');
 };
 
-// ── Hot Fix (one-click combo) ──
+// â”€â”€ Hot Fix (one-click combo) â”€â”€
 $('btn-hotfix').onclick=()=>{
-  // 1. compact whitespace
-  lines.forEach(l=>{l.text=l.text.replace(/\s+/g,' ').trim();if(l.words)l.words.forEach(w=>w.text=w.text.trim());});
-  // 2. remove empty words
-  lines.forEach(l=>{if(l.words)l.words=l.words.filter(w=>w.text.trim());});
-  // 3. fill gaps
-  lines.forEach(c=>{if(c.words&&c.words.length){c.words[0].startMs=c.startMs;for(let i=0;i<c.words.length-1;i++)c.words[i].endMs=c.words[i+1].startMs;c.words[c.words.length-1].endMs=c.endMs;}});
-  pushHistory();renderTimeline();
+  waveformCache.clear();
+  // 1. Compact whitespace
+  lines.forEach(l=>{
+    l.text = (l.text || "").replace(/\s+/g,' ').trim();
+    if(l.words) l.words.forEach(w => w.text = (w.text || "").trim());
+  });
+  
+  // 2. Word-level structural cleanup
+  lines.forEach(l => {
+    if(!l.words || !l.words.length) return;
+    
+    // Remove zero-duration or invalid blank/ghost blocks
+    l.words = l.words.filter(w => {
+        const t = (w.text || "").trim();
+        if (!t || t === "\\" || t === "\"") {
+            if (w.endMs <= w.startMs) return false;
+            if (w.startMs === 0 && w.endMs === 0) return false;
+        }
+        return true;
+    });
+    
+    if(l.words.length === 0) return;
+
+    // 3. Resolve overlaps (Fix Word Overlaps)
+    const minD = 20;
+    for (let i = 0; i < l.words.length - 1; i++) {
+        if (l.words[i].endMs > l.words[i + 1].startMs) {
+            l.words[i + 1].startMs = l.words[i].endMs;
+            if (l.words[i + 1].endMs < l.words[i + 1].startMs + minD) {
+                l.words[i + 1].endMs = l.words[i + 1].startMs + minD;
+            }
+        }
+    }
+    
+    // 4. Fill gaps (Ensure full line coverage)
+    l.words[0].startMs = l.startMs;
+    for (let i = 0; i < l.words.length - 1; i++) {
+        l.words[i].endMs = l.words[i + 1].startMs;
+    }
+    l.words[l.words.length - 1].endMs = l.endMs;
+  });
+
+  // 5. Resolve Line-Level Overlaps & Jumps (Sequential Alignment)
+  const minD = 20;
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (lines[i].endMs > lines[i + 1].startMs) {
+      lines[i].endMs = lines[i + 1].startMs;
+      // Also ensure words inside the line don't exceed the new boundary
+      if (lines[i].words && lines[i].words.length > 0) {
+        lines[i].words.forEach(w => {
+          if (w.startMs > lines[i].endMs) w.startMs = Math.max(lines[i].startMs, lines[i].endMs - minD);
+          if (w.endMs > lines[i].endMs) w.endMs = lines[i].endMs;
+        });
+        for (let j = 0; j < lines[i].words.length - 1; j++) {
+          if (lines[i].words[j].endMs > lines[i].words[j + 1].startMs) {
+              lines[i].words[j + 1].startMs = lines[i].words[j].endMs;
+              if (lines[i].words[j + 1].endMs < lines[i].words[j + 1].startMs + minD) {
+                  lines[i].words[j + 1].endMs = lines[i].words[j + 1].startMs + minD;
+              }
+          }
+        }
+      }
+    }
+  }
+  
+  pushHistory();
+  renderTimeline();
 };
 
-// ── Shift Time Modal ──
+// â”€â”€ Shift Time Modal â”€â”€
 $('shift-minus-500').onclick=()=>$('shift-amount').value=parseInt($('shift-amount').value||0)-500;
 $('shift-minus-100').onclick=()=>$('shift-amount').value=parseInt($('shift-amount').value||0)-100;
 $('shift-plus-100').onclick=()=>$('shift-amount').value=parseInt($('shift-amount').value||0)+100;
@@ -863,10 +1651,16 @@ const ms=parseInt($('shift-amount').value)||0;
   pushHistory();renderTimeline();$('shift-modal').style.display='none';
 };
 
-// ── Selection Logic ──
+// â”€â”€ Selection Logic â”€â”€
 $('check-all-lines').onclick = (e) => {
-    const checked = e.target.checked;
-    document.querySelectorAll('.line-checkbox').forEach(cb => cb.checked = checked);
+    const cbs = document.querySelectorAll('.line-checkbox');
+    const checkedCount = document.querySelectorAll('.line-checkbox:checked').length;
+    
+    // If some or all lines are selected, the next state should be "none" (unchecked).
+    // If no lines are selected, the next state should be "all" (checked).
+    const nextState = checkedCount === 0;
+    
+    cbs.forEach(cb => cb.checked = nextState);
     updateSelectionCount();
 };
 
@@ -891,7 +1685,7 @@ function updateSelectionCount() {
     }
 }
 
-// ── Find & Replace Modal ──
+// â”€â”€ Find & Replace Modal â”€â”€
 $('fr-cancel').onclick=()=>$('find-replace-modal').style.display='none';
 $('fr-apply').onclick=()=>{
   const f=$('find-text').value, r=$('replace-text').value;
@@ -903,37 +1697,500 @@ $('fr-apply').onclick=()=>{
   pushHistory();renderTimeline();$('find-replace-modal').style.display='none';
 };
 
-// ── Edit Text Modal ──
+// â”€â”€ Edit Text Modal â”€â”€
 $('et-cancel').onclick = () => $('edit-text-modal').style.display = 'none';
-$('et-apply').onclick = () => {
-  const newText = $('edit-text-input').value.replace(/\s+/g, ' ').trim();
-  if (newText && editingLine) {
-    editingLine.text = newText;
-    const newWords = editingLine.text.split(/\s+/);
-    if (editingLine.words && editingLine.words.length === newWords.length) {
-      editingLine.words.forEach((w, i) => w.text = newWords[i]);
-    } else {
-      const dur = editingLine.endMs - editingLine.startMs;
-      const perW = dur / newWords.length;
-      editingLine.words = newWords.map((txt, i) => ({
-        id: Date.now() + i, 
-        text: txt,
-        startMs: Math.round(editingLine.startMs + perW * i),
-        endMs: Math.round(editingLine.startMs + perW * (i + 1))
-      }));
+
+function updateEditHighlighter() {
+    const text = $('edit-text-input').value;
+    const highlighted = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\\/g, (m, offset, str) => {
+            const prev = str[offset - 1];
+            const next = str[offset + 1];
+            const isStandalone = (!prev || /\s/.test(prev)) && (!next || /\s/.test(next));
+            return isStandalone ? `<span class="marker-highlight">\\</span>` : '\\';
+        });
+    $('edit-text-backdrop').innerHTML = highlighted + (text.endsWith('\n') ? ' ' : '');
+}
+
+let editSyncInterval = null;
+function startEditSync() {
+    if (editSyncInterval) clearInterval(editSyncInterval);
+    editSyncInterval = setInterval(() => {
+        const input = $('edit-text-input');
+        const backdrop = $('edit-text-backdrop');
+        if (!input || !backdrop) return;
+        if (backdrop.scrollTop !== input.scrollTop) backdrop.scrollTop = input.scrollTop;
+        if (backdrop.scrollLeft !== input.scrollLeft) backdrop.scrollLeft = input.scrollLeft;
+        
+        // If modal closed, stop sync
+        if ($('edit-text-modal').style.display === 'none') {
+            clearInterval(editSyncInterval);
+            editSyncInterval = null;
+        }
+    }, 32); 
+}
+
+$('edit-text-input').oninput = () => {
+    updateEditHighlighter();
+    // Debounce pushing to history or push on significant changes?
+    // For now, push on every input but maybe debounced is better.
+    pushModalHistory(); 
+};
+$('edit-text-input').onscroll = () => {
+    $('edit-text-backdrop').scrollTop = $('edit-text-input').scrollTop;
+    $('edit-text-backdrop').scrollLeft = $('edit-text-input').scrollLeft;
+};
+
+// Local Shortcuts
+$('edit-text-input').onkeydown = (e) => {
+    if (e.ctrlKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        e.stopPropagation();
+        modalUndo();
     }
-    pushHistory();
-    renderTimeline();
+    if (e.ctrlKey && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
+        e.preventDefault();
+        e.stopPropagation();
+        modalRedo();
+    }
+};
+
+// Mouse-based text drag-and-drop for edit textarea
+(function() {
+    const input = $('edit-text-input');
+    const dropCursor = $('edit-drop-cursor');
+    let drag = null;
+
+    // Get character index + visual position at a given screen coordinate
+    function charPosAt(cx, cy) {
+        const text = input.value;
+        if (!text) return { idx: 0, x: 0, y: 0 };
+        const cs = getComputedStyle(input);
+        const rect = input.getBoundingClientRect();
+        const padL = parseFloat(cs.paddingLeft), padT = parseFloat(cs.paddingTop);
+        const bdrL = parseFloat(cs.borderLeftWidth), bdrT = parseFloat(cs.borderTopWidth);
+        const relX = cx - rect.left - padL - bdrL + input.scrollLeft;
+        const relY = cy - rect.top - padT - bdrT + input.scrollTop;
+
+        const m = document.createElement('div');
+        ['fontFamily','fontSize','fontWeight','fontStyle','lineHeight','letterSpacing',
+         'wordSpacing','whiteSpace','wordWrap','overflowWrap','boxSizing'].forEach(p => m.style[p] = cs[p]);
+        m.style.width = (input.clientWidth - padL - parseFloat(cs.paddingRight)) + 'px';
+        m.style.position = 'fixed'; m.style.left = '-9999px'; m.style.top = '0';
+        m.style.visibility = 'hidden'; m.style.height = 'auto';
+        m.style.padding = '0'; m.style.border = 'none';
+        document.body.appendChild(m);
+
+        let best = 0, bestD = Infinity, bestX = 0, bestY = 0;
+        for (let i = 0; i <= text.length; i++) {
+            m.textContent = '';
+            const sp = document.createElement('span');
+            sp.textContent = text.substring(0, i);
+            const mk = document.createElement('span');
+            mk.textContent = '\u200b';
+            m.appendChild(sp); m.appendChild(mk);
+            m.appendChild(document.createTextNode(text.substring(i)));
+            const mr = m.getBoundingClientRect(), mkr = mk.getBoundingClientRect();
+            const charX = mkr.left - mr.left, charY = mkr.top - mr.top;
+            const dx = charX - relX, dy = charY - relY;
+            const d = Math.abs(dy) * 10000 + Math.abs(dx);
+            if (d < bestD) { bestD = d; best = i; bestX = charX; bestY = charY; }
+        }
+        document.body.removeChild(m);
+        // Convert back to screen-relative coords within the wrapper
+        return { idx: best, x: padL + bdrL + bestX - input.scrollLeft, y: padT + bdrT + bestY - input.scrollTop };
+    }
+
+    function showDropCursor(x, y) {
+        dropCursor.style.display = 'block';
+        dropCursor.style.left = x + 'px';
+        dropCursor.style.top = y + 'px';
+    }
+
+    function hideDropCursor() {
+        dropCursor.style.display = 'none';
+    }
+
+    input.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        const s = input.selectionStart, ed = input.selectionEnd;
+        if (s === ed) return;
+        const { idx } = charPosAt(e.clientX, e.clientY);
+        if (idx >= s && idx <= ed) {
+            e.preventDefault();
+            drag = { text: input.value.substring(s, ed), start: s, end: ed,
+                     sx: e.clientX, sy: e.clientY, active: false };
+        }
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!drag) return;
+        if (!drag.active && (Math.abs(e.clientX - drag.sx) > 3 || Math.abs(e.clientY - drag.sy) > 3)) {
+            drag.active = true;
+            input.style.cursor = 'grabbing';
+        }
+        if (drag.active) {
+            const { idx, x, y } = charPosAt(e.clientX, e.clientY);
+            if (idx < drag.start || idx > drag.end) {
+                showDropCursor(x, y);
+            } else {
+                hideDropCursor();
+            }
+        }
+    });
+
+    document.addEventListener('mouseup', (e) => {
+        if (!drag) return;
+        input.style.cursor = '';
+        hideDropCursor();
+        if (drag.active) {
+            const { idx: dropPos } = charPosAt(e.clientX, e.clientY);
+            const { text: dragged, start: os, end: oe } = drag;
+            if (dropPos < os || dropPos > oe) {
+                const val = input.value;
+                let nv, cur;
+                if (dropPos < os) {
+                    nv = val.substring(0, dropPos) + dragged + val.substring(dropPos, os) + val.substring(oe);
+                    cur = dropPos + dragged.length;
+                } else {
+                    nv = val.substring(0, os) + val.substring(oe, dropPos) + dragged + val.substring(dropPos);
+                    cur = dropPos - (oe - os) + dragged.length;
+                }
+                input.value = nv;
+                input.setSelectionRange(cur - dragged.length, cur);
+                updateEditHighlighter();
+                pushModalHistory();
+            }
+        } else {
+            const { idx } = charPosAt(e.clientX, e.clientY);
+            input.setSelectionRange(idx, idx);
+        }
+        drag = null;
+    });
+})();
+
+// Sync highlighter on other interactions
+['change', 'blur'].forEach(evt => {
+    $('edit-text-input').addEventListener(evt, () => {
+        setTimeout(() => { updateEditHighlighter(); }, 10);
+    });
+});
+
+$('btn-edit-undo').onclick = modalUndo;
+$('btn-edit-redo').onclick = modalRedo;
+
+$('btn-insert-blank').onclick = () => {
+    const input = $('edit-text-input');
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    const text = input.value;
+    const insert = " \\ ";
+    input.value = text.substring(0, start) + insert + text.substring(end);
+    updateEditHighlighter();
+    pushModalHistory();
+    input.focus();
+    input.selectionStart = input.selectionEnd = start + insert.length;
+};
+
+$('btn-remove-blank').onclick = () => {
+    const input = $('edit-text-input');
+    // Remove \ and up to one space on each side to cleanly rejoin split words like "ente \ rpr \ ise"
+    input.value = input.value.replace(/\s?[\\"]\s?/g, '').replace(/\s+/g, ' ').trim();
+    updateEditHighlighter();
+    pushModalHistory();
+    input.focus();
+};
+
+$('btn-join-words').onclick = () => {
+    const input = $('edit-text-input');
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    
+    if (start !== end) {
+        // Join only selected text
+        const selectedText = input.value.substring(start, end);
+        const joined = selectedText.replace(/\s+/g, '');
+        input.value = input.value.substring(0, start) + joined + input.value.substring(end);
+        // Restore selection to the joined part
+        input.setSelectionRange(start, start + joined.length);
+    } else {
+        // Join all text (existing behavior)
+        input.value = input.value.replace(/\s+/g, '');
+    }
+    
+    updateEditHighlighter();
+    pushModalHistory();
+    input.focus();
+};
+
+$('et-apply').onclick = () => {
+  const inputVal = $('edit-text-input').value.trim();
+  if (editingLine) {
+    // Fix tokenization: ensure \ and " are treated as separate tokens even if attached to words
+    const newTokens = inputVal.replace(/([\\"])/g, ' $1 ').split(/\s+/).filter(t => t);
+    const oldWords = (editingLine.words && editingLine.words.length > 0)
+        ? editingLine.words
+        : editingLine.text.trim().split(/\s+/).filter(t => t).map((t, i, arr) => {
+            const p = (editingLine.endMs - editingLine.startMs) / arr.length;
+            return {
+                id: `tmp-${Date.now()}-${i}`,
+                text: t,
+                startMs: Math.round(editingLine.startMs + p * i),
+                endMs: Math.round(editingLine.startMs + p * (i + 1))
+            };
+        });
+
+    const keepStructure = $('edit-keep-structure').checked;
+
+    // 1. Case: Word counts match
+    if (newTokens.length === oldWords.length) {
+        let resultWords;
+
+        if (keepStructure) {
+            // ON: Sequential â€” slot N keeps its timestamp, text changes
+            resultWords = oldWords.map((w, i) => ({
+                ...w,
+                text: (newTokens[i] === '\\' || newTokens[i] === '"') ? "" : newTokens[i]
+            }));
+        } else {
+            // OFF (default): Smart â€” words carry their DURATION to new positions
+            const usedOld = new Set();
+            const matched = new Array(newTokens.length).fill(null);
+
+            // First pass: Match identical words (case-insensitive)
+            newTokens.forEach((t, i) => {
+                const text = (t === '\\' || t === '"') ? "" : t;
+                const matchIdx = oldWords.findIndex((ow, idx) =>
+                    !usedOld.has(idx) && ow.text.toLowerCase() === text.toLowerCase()
+                );
+                if (matchIdx !== -1) {
+                    matched[i] = {
+                        text: text,
+                        duration: oldWords[matchIdx].endMs - oldWords[matchIdx].startMs,
+                        id: oldWords[matchIdx].id
+                    };
+                    usedOld.add(matchIdx);
+                }
+            });
+
+            // Second pass: Fill unmatched with remaining old words' durations
+            const remainingOld = oldWords.filter((_, idx) => !usedOld.has(idx));
+            let remIdx = 0;
+            newTokens.forEach((t, i) => {
+                if (!matched[i]) {
+                    const text = (t === '\\' || t === '"') ? "" : t;
+                    if (remIdx < remainingOld.length) {
+                        matched[i] = {
+                            text: text,
+                            duration: remainingOld[remIdx].endMs - remainingOld[remIdx].startMs,
+                            id: remainingOld[remIdx].id
+                        };
+                        remIdx++;
+                    } else {
+                        matched[i] = { text: text, duration: 50, id: Date.now() + i };
+                    }
+                }
+            });
+
+            // Place words sequentially, preserving proportional durations
+            const lineStart = oldWords[0].startMs;
+            const lineEnd = oldWords[oldWords.length - 1].endMs;
+            const totalSpan = lineEnd - lineStart;
+            const totalDur = matched.reduce((sum, m) => sum + m.duration, 0);
+            let cursor = lineStart;
+
+            resultWords = matched.map((m, i) => {
+                const dur = (totalDur > 0) ? (m.duration / totalDur) * totalSpan : totalSpan / matched.length;
+                const word = {
+                    id: m.id,
+                    text: m.text,
+                    startMs: Math.round(cursor),
+                    endMs: Math.round(cursor + dur)
+                };
+                cursor = word.endMs;
+                return word;
+            });
+            // Snap last word to exact line boundary
+            resultWords[resultWords.length - 1].endMs = lineEnd;
+        }
+
+        editingLine.words = resultWords;
+        editingLine.text = resultWords.map(w => w.text).join(' ').replace(/\s+/g, ' ').trim();
+        pushHistory(); renderTimeline();
+        $('edit-text-modal').style.display = 'none'; editingLine = null;
+        return;
+    }
+
+    // 2. Case: Keep Structure (Different word counts)
+    if (keepStructure) {
+        const resultWords = [];
+        newTokens.forEach((t, i) => {
+            const text = (t === '\\' || t === '"') ? "" : t;
+            if (i < oldWords.length) {
+                resultWords.push({ ...oldWords[i], text: text });
+            } else {
+                const last = resultWords[resultWords.length - 1];
+                const start = last ? last.endMs : (oldWords.length ? oldWords[oldWords.length-1].endMs : editingLine.startMs);
+                resultWords.push({ id: Date.now() + i, text: text, startMs: start, endMs: Math.max(start + 100, editingLine.endMs) });
+            }
+        });
+        for (let i = newTokens.length; i < oldWords.length; i++) {
+            resultWords.push({ ...oldWords[i], text: "" });
+        }
+        editingLine.words = resultWords;
+        editingLine.text = resultWords.map(w => w.text).join(' ').replace(/\s+/g, ' ').trim();
+        pushHistory(); renderTimeline();
+        $('edit-text-modal').style.display = 'none'; editingLine = null;
+        return;
+    }
+
+    // 3. Case: Smart Alignment (LCS - Different word counts)
+    function getLCS(arr1, arr2) {
+        const n = arr1.length, m = arr2.length;
+        const dp = Array.from({length: n+1}, () => Array(m+1).fill(0));
+        for (let i=1; i<=n; i++) {
+            for (let j=1; j<=m; j++) {
+                const w1 = arr1[i-1].text.toLowerCase();
+                const w2 = arr2[j-1].toLowerCase();
+                const isMatch = (w1 === w2) || (w1 === "" && (w2 === "\\" || w2 === '"'));
+                if (isMatch) dp[i][j] = dp[i-1][j-1] + 1;
+                else dp[i][j] = Math.max(dp[i-1][j], dp[i][j-1]);
+            }
+        }
+        const res = []; let i=n, j=m;
+        while (i>0 && j>0) {
+            const w1 = arr1[i-1].text.toLowerCase();
+            const w2 = arr2[j-1].toLowerCase();
+            const isMatch = (w1 === w2) || (w1 === "" && (w2 === "\\" || w2 === '"'));
+            if (isMatch) {
+                res.unshift({oldIdx: i-1, newIdx: j-1}); i--; j--;
+            } else if (dp[i-1][j] > dp[i][j-1]) i--; else j--;
+        }
+        return res;
+    }
+
+    const anchors = getLCS(oldWords, newTokens);
+    const resultWords = [];
+
+    // Add virtual anchors at start/end
+    const fullAnchors = [
+        {oldIdx: -1, newIdx: -1, endMs: editingLine.startMs},
+        ...anchors.map(a => ({...a, startMs: oldWords[a.oldIdx].startMs, endMs: oldWords[a.oldIdx].endMs})),
+        {oldIdx: oldWords.length, newIdx: newTokens.length, startMs: editingLine.endMs}
+    ];
+
+    for (let i = 0; i < fullAnchors.length - 1; i++) {
+        const curr = fullAnchors[i], next = fullAnchors[i+1];
+
+        // Add current anchor if it's real
+        if (curr.oldIdx !== -1) {
+            resultWords.push({
+                ...oldWords[curr.oldIdx],
+                text: (newTokens[curr.newIdx] === "\\" || newTokens[curr.newIdx] === '"') ? "" : newTokens[curr.newIdx]
+            });
+        }
+
+        // Process gap between current and next anchor
+        const oldGapStart = curr.oldIdx === -1 ? curr.endMs : oldWords[curr.oldIdx].endMs;
+        const oldGapEnd = next.oldIdx === oldWords.length ? next.startMs : oldWords[next.oldIdx].startMs;
+
+        const oldInGap = oldWords.slice(curr.oldIdx + 1, next.oldIdx);
+        const newInGap = newTokens.slice(curr.newIdx + 1, next.newIdx);
+
+        if (newInGap.length > 0) {
+            if (oldInGap.length > 0) {
+                // If we have both, map them proportionally
+                const spanStart = oldInGap[0].startMs;
+                const spanEnd = oldInGap[oldInGap.length - 1].endMs;
+                const dur = spanEnd - spanStart;
+                const perW = dur / newInGap.length;
+                newInGap.forEach((t, idx) => {
+                    const isBlank = (t === "\\" || t === '"');
+                    resultWords.push({
+                        id: oldInGap[idx] ? oldInGap[idx].id : (Date.now() + Math.random()),
+                        text: isBlank ? "" : t,
+                        startMs: Math.round(spanStart + perW * idx),
+                        endMs: Math.round(spanStart + perW * (idx + 1))
+                    });
+                });
+            } else {
+                // Pure insertion: Steal space from neighbors (prev and next)
+                const newWordMin = 50;
+                const existingWordMin = 20;
+
+                const minNeeded = newWordMin * newInGap.length;
+                let insertStart = oldGapStart;
+                let insertEnd = oldGapEnd;
+                let available = insertEnd - insertStart;
+
+                if (available < minNeeded) {
+                    const toSteal = minNeeded - available;
+                    const prev = resultWords.length > 0 ? resultWords[resultWords.length - 1] : null;
+                    const nWord = next.oldIdx < oldWords.length ? oldWords[next.oldIdx] : null;
+
+                    const prevCap = prev ? Math.max(0, (prev.endMs - prev.startMs) - existingWordMin) : 0;
+                    const nextCap = nWord ? Math.max(0, (nWord.endMs - nWord.startMs) - existingWordMin) : 0;
+                    const totalCap = prevCap + nextCap;
+
+                    if (totalCap > 0) {
+                        const prevSteal = (prevCap / totalCap) * toSteal;
+                        const nextSteal = (nextCap / totalCap) * toSteal;
+
+                        if (prev) {
+                            prev.endMs -= prevSteal;
+                            insertStart = prev.endMs;
+                        }
+                        if (nWord) {
+                            nWord.startMs += nextSteal;
+                            insertEnd = nWord.startMs;
+                            fullAnchors[i+1].startMs = nWord.startMs;
+                        }
+                    }
+                }
+
+                // Recalculate available and perW after stealing
+                available = Math.max(minNeeded, insertEnd - insertStart);
+                const perW = available / newInGap.length;
+                newInGap.forEach((t, idx) => {
+                    const isBlank = (t === "\\" || t === '"');
+                    resultWords.push({
+                        id: Date.now() + Math.random(),
+                        text: isBlank ? "" : t,
+                        startMs: Math.round(insertStart + perW * idx),
+                        endMs: Math.round(insertStart + perW * (idx + 1))
+                    });
+                });
+            }
+        } else if (oldInGap.length > 0) {
+            // Words were deleted in the text modal.
+            // Merge their duration into the preceding word (curr or last in resultWords)
+            const lastWord = resultWords.length > 0 ? resultWords[resultWords.length - 1] : null;
+            if (lastWord) {
+                lastWord.endMs = oldInGap[oldInGap.length - 1].endMs;
+            } else if (next.oldIdx < oldWords.length) {
+                // If no previous word, expand the next anchor's start
+                oldWords[next.oldIdx].startMs = oldGapStart;
+                fullAnchors[i+1].startMs = oldGapStart;
+            }
+        }
+    }
+
+    editingLine.words = resultWords;
+    editingLine.text = resultWords.map(w => w.text).join(' ').replace(/\s+/g, ' ').trim();
+    pushHistory(); renderTimeline();
   }
   $('edit-text-modal').style.display = 'none';
   editingLine = null;
 };
 
-// ── Undo/Redo Buttons ──
+// â”€â”€ Undo/Redo Buttons â”€â”€
 $('btn-undo').onclick=undo;
 $('btn-redo').onclick=redo;
 
-// ── View Mode Toggle ──
+// â”€â”€ View Mode Toggle â”€â”€
 function setViewMode(mode) {
     const container = document.querySelector('.editor-container');
     if (mode === 'compact') {
@@ -950,14 +2207,23 @@ function setViewMode(mode) {
 $('view-one-line').onclick = () => setViewMode('default');
 $('view-compact').onclick = () => setViewMode('compact');
 
-// ── Highlight Toggle ──
+// â”€â”€ Highlight Toggle â”€â”€
+$('btn-toggle-waveform').onclick = () => {
+    isWaveformEnabled = !isWaveformEnabled;
+    const btn = $('btn-toggle-waveform');
+    btn.style.color = isWaveformEnabled ? 'var(--accent)' : 'var(--text-muted)';
+    waveformCache.clear(); // Clear cache to force redraw or hide
+    renderTimeline();
+    saveSession();
+};
+
 $('btn-toggle-highlight').onclick = () => {
     isWordHighlightEnabled = !isWordHighlightEnabled;
     $('btn-toggle-highlight').style.color = isWordHighlightEnabled ? 'var(--accent)' : 'var(--text-muted)';
     updateDisplay();
 };
 
-// ── Prev/Next Line ──
+// â”€â”€ Prev/Next Line â”€â”€
 function centerActiveLine() {
     const active = document.querySelector('.timeline-track.active');
     if (active) {
@@ -965,29 +2231,29 @@ function centerActiveLine() {
     }
 }
 
-$('btn-prev-line').onclick=()=>{
+$('btn-prev-line').onclick=()=> jumpLines(-1);
+$('btn-next-line').onclick=()=> jumpLines(1);
+
+function jumpLines(delta) {
     if(!lines.length) return;
-    let activeIdx=-1;
-    for(let i=0;i<lines.length;i++){
-        if(lines[i].startMs <= currentTime + 50) activeIdx=i;
+    let activeIdx = -1;
+    for(let i=0; i<lines.length; i++) {
+        if(lines[i].startMs <= currentTime + 50) activeIdx = i;
         else break;
     }
-    let targetIdx = activeIdx - 1;
+    let targetIdx = activeIdx + delta;
     if(targetIdx < 0) targetIdx = 0;
+    if(targetIdx >= lines.length) targetIdx = lines.length - 1;
+    
+    // For single line jumps from a state where no line is "active" yet (currentTime < first line)
+    // and we press "Next", it should go to index 0.
+    if (activeIdx === -1 && delta > 0) targetIdx = delta - 1;
+
     seekMs(lines[targetIdx].startMs);
-    setTimeout(centerActiveLine, 50); // Small delay to ensure render is updated
-};
+    setTimeout(centerActiveLine, 50);
+}
 
-$('btn-next-line').onclick=()=>{
-    if(!lines.length) return;
-    const next = lines.find(l => l.startMs > currentTime + 50);
-    if(next) {
-        seekMs(next.startMs);
-        setTimeout(centerActiveLine, 50);
-    }
-};
-
-// ── Keyboard Shortcuts ──
+// â”€â”€ Keyboard Shortcuts â”€â”€
 window.addEventListener('keydown', e => {
   const isMod = e.ctrlKey || e.metaKey;
 
@@ -997,7 +2263,10 @@ window.addEventListener('keydown', e => {
     $('find-replace-modal').style.display = 'none';
     $('shortcuts-modal').style.display = 'none';
     $('edit-text-modal').style.display = 'none';
+    $('smart-merge-modal').style.display = 'none';
     $('format-text-modal').style.display = 'none';
+    $('jump-line-modal').style.display = 'none';
+    $('jump-word-modal').style.display = 'none';
     if (document.activeElement === $('search-input')) {
       $('search-input').blur();
     }
@@ -1009,8 +2278,9 @@ window.addEventListener('keydown', e => {
   // 1. Handle specific Mod-key combinations first
   if (isMod) {
     // History
-    if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
-    if (e.key === 'y' || (e.key === 'z' && e.shiftKey)) { e.preventDefault(); redo(); return; }
+    const key = e.key.toLowerCase();
+    if (key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
+    if (key === 'y' || (key === 'z' && e.shiftKey)) { e.preventDefault(); redo(); return; }
     
     // Volume
     if (e.key === 'ArrowUp') { e.preventDefault(); setVolume(audio.volume + 0.1); return; }
@@ -1028,26 +2298,53 @@ window.addEventListener('keydown', e => {
   if (!e.shiftKey) {
     // Playback
     if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
-    if (e.key === 's' || e.key === 'S') { e.preventDefault(); stopPlay(); }
+    if (e.key === 'x' || e.key === 'X') { e.preventDefault(); stopPlay(); }
     if (e.key === 'r' || e.key === 'R') { e.preventDefault(); toggleRepeat(); }
+    if (e.key === 'l' || e.key === 'L') { e.preventDefault(); toggleRepeatWord(); }
+    if (e.key === 'o' || e.key === 'O') { e.preventDefault(); toggleRepeatSong(); }
+    if (e.key === 'p' || e.key === 'P') { e.preventDefault(); $('btn-fullscreen').click(); }
     if (e.key === 'm' || e.key === 'M') { e.preventDefault(); toggleMute(); }
     if (e.key === '1') { $('btn-load-audio').click(); }
     if (e.key === '2') { $('btn-load-lyrics').click(); }
     if (e.key === 'e' || e.key === 'E') { e.preventDefault(); performExport(lastImportFormat, true); }
-    if (e.key === 'f' || e.key === 'F') { e.preventDefault(); $('search-input').focus(); }
-    if (e.key === 'g' || e.key === 'G') { e.preventDefault(); $('tool-find-replace').click(); }
+    if (e.key === 's' || e.key === 'S') { e.preventDefault(); $('search-input').focus(); }
+    if (e.key === 'h' || e.key === 'H') { e.preventDefault(); $('tool-find-replace').click(); }
     if (e.key === 't' || e.key === 'T') { e.preventDefault(); $('tool-shift-time').click(); }
-    if (e.key === 'h' || e.key === 'H') { e.preventDefault(); $('btn-hotfix').click(); }
+    if (e.key === 'f' || e.key === 'F') { e.preventDefault(); $('btn-hotfix').click(); }
+    if (e.key === 'g' || e.key === 'G') { 
+        e.preventDefault(); 
+        $('jump-line-input').value = '';
+        if (lines.length > 0) {
+            $('jl-info').textContent = `RANGE: 1 - ${lines.length}`;
+            $('jump-line-input').placeholder = `1-${lines.length}`;
+        }
+        $('jump-line-modal').style.display = 'flex'; 
+        $('jump-line-input').focus(); 
+    }
+    if (e.key === 'w' || e.key === 'W') {
+        e.preventDefault();
+        $('jump-word-input').value = '';
+        let tw = 0; lines.forEach(l => tw += (l.words ? l.words.length : 0));
+        if (tw > 0) {
+            $('jw-info').textContent = `RANGE: 1 - ${tw}`;
+            $('jump-word-input').placeholder = `1-${tw}`;
+        }
+        $('jump-word-modal').style.display = 'flex';
+        $('jump-word-input').focus();
+    }
     if (e.key === 'd' || e.key === 'D') { e.preventDefault(); setViewMode('default'); }
     if (e.key === 'c' || e.key === 'C') { e.preventDefault(); setViewMode('compact'); }
     if (e.key === 'k' || e.key === 'K') { e.preventDefault(); $('btn-shortcuts').click(); }
-    if (e.key === 'l' || e.key === 'L') { e.preventDefault(); $('btn-fullscreen').click(); }
     if (e.key === 'n' || e.key === 'N') { e.preventDefault(); insertBlankLine(lines.length); }
     if (e.key === 'Delete') { e.preventDefault(); $('btn-delete-selected').click(); }
 
     // Navigation & Seeking
-    if (e.key === 'ArrowUp') { e.preventDefault(); $('btn-prev-line').click(); }
-    if (e.key === 'ArrowDown') { e.preventDefault(); $('btn-next-line').click(); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); jumpLines(-1); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); jumpLines(1); }
+    if (e.key === 'Home') { e.preventDefault(); jumpLines(-lines.length); }
+    if (e.key === 'End') { e.preventDefault(); jumpLines(lines.length); }
+    if (e.key === 'PageUp') { e.preventDefault(); jumpLines(-5); }
+    if (e.key === 'PageDown') { e.preventDefault(); jumpLines(5); }
     if (e.key === 'ArrowLeft') { e.preventDefault(); seekMs(Math.max(0, currentTime - 2000)); }
     if (e.key === 'ArrowRight') { e.preventDefault(); seekMs(Math.min(duration, currentTime + 2000)); }
     
@@ -1093,7 +2390,7 @@ function nudgeTime(ms) {
     renderTimeline();
 }
 
-// ── Search ──
+// â”€â”€ Search â”€â”€
 $('search-input').oninput=e=>{
   const q=e.target.value.toLowerCase();
   $('search-clear').style.display = q ? 'block' : 'none';
@@ -1122,7 +2419,7 @@ $('btn-fullscreen').onclick = () => {
     }
 };
 
-// ── Shortcuts Modal ──
+// â”€â”€ Shortcuts Modal â”€â”€
 $('btn-shortcuts').onclick = () => $('shortcuts-modal').style.display = 'flex';
 $('shortcuts-close').onclick = () => $('shortcuts-modal').style.display = 'none';
 $('shortcuts-close-top').onclick = () => $('shortcuts-modal').style.display = 'none';
@@ -1199,7 +2496,83 @@ $('btn-delete-selected').onclick = () => {
     }
 };
 
-window.addEventListener('click', (e) => { if (e.target === $('shortcuts-modal')) $('shortcuts-modal').style.display = 'none'; });
+// ── Jump to Line ──
+$('jl-cancel').onclick = () => $('jump-line-modal').style.display = 'none';
+$('jl-dec').onclick = () => {
+    const input = $('jump-line-input');
+    const val = parseInt(input.value) || 1;
+    if (val > 1) input.value = val - 1;
+};
+$('jl-inc').onclick = () => {
+    const input = $('jump-line-input');
+    const val = parseInt(input.value) || 0;
+    if (val < lines.length) input.value = val + 1;
+};
+$('jl-apply').onclick = () => {
+    const val = parseInt($('jump-line-input').value);
+    if (!isNaN(val) && val > 0 && val <= lines.length) {
+        seekMs(lines[val - 1].startMs);
+        setTimeout(centerActiveLine, 50);
+        $('jump-line-modal').style.display = 'none';
+        $('jump-line-input').value = '';
+    } else if ($('jump-line-input').value === '') {
+        $('jump-line-modal').style.display = 'none';
+    } else {
+        alert(`Invalid line number. Please enter a number between 1 and ${lines.length}.`);
+    }
+};
+$('jump-line-input').onkeydown = (e) => {
+    if (e.key === 'Enter') $('jl-apply').click();
+};
+
+window.addEventListener('click', (e) => { 
+    if (e.target === $('shortcuts-modal')) $('shortcuts-modal').style.display = 'none'; 
+    if (e.target === $('jump-line-modal')) $('jump-line-modal').style.display = 'none';
+    if (e.target === $('jump-word-modal')) $('jump-word-modal').style.display = 'none';
+});
+
+// ── Jump to Word ──
+$('jw-cancel').onclick = () => $('jump-word-modal').style.display = 'none';
+$('jw-dec').onclick = () => {
+    const input = $('jump-word-input');
+    const val = parseInt(input.value) || 1;
+    if (val > 1) input.value = val - 1;
+};
+$('jw-inc').onclick = () => {
+    const input = $('jump-word-input');
+    const val = parseInt(input.value) || 0;
+    let tw = 0; lines.forEach(l => tw += (l.words ? l.words.length : 0));
+    if (val < tw) input.value = val + 1;
+};
+$('jw-apply').onclick = () => {
+    const val = parseInt($('jump-word-input').value);
+    if (!isNaN(val) && val > 0) {
+        let count = 0;
+        let found = false;
+        for (const line of lines) {
+            const wordCount = line.words ? line.words.length : 0;
+            if (count + wordCount >= val) {
+                const wordIdx = val - count - 1;
+                const word = line.words[wordIdx];
+                if (word) {
+                    seekMs(word.startMs);
+                    setTimeout(centerActiveLine, 50);
+                    $('jump-word-modal').style.display = 'none';
+                    $('jump-word-input').value = '';
+                    found = true;
+                }
+                break;
+            }
+            count += wordCount;
+        }
+        if (!found) alert("Word index out of range");
+    } else if ($('jump-word-input').value === '') {
+        $('jump-word-modal').style.display = 'none';
+    }
+};
+$('jump-word-input').onkeydown = (e) => {
+    if (e.key === 'Enter') $('jw-apply').click();
+};
 
 // Handle Esc key or other fullscreen exits
 document.addEventListener('fullscreenchange', () => {
@@ -1210,7 +2583,7 @@ document.addEventListener('fullscreenchange', () => {
     }
 });
 
-// ── Drag & Drop ──
+// â”€â”€ Drag & Drop â”€â”€
 document.addEventListener('dragover', e => {
     e.preventDefault();
     if (!lines.length) container.classList.add('drag-over');
@@ -1261,12 +2634,16 @@ document.addEventListener('drop', e => {
     }
 });
 
-// ── Init ──
+// â”€â”€ Init â”€â”€
 (async function init() {
     loadSession(); // Load text/metadata (very fast)
     updateFileUI();
     renderTimeline();
     updateDisplay();
+    
+    // Sync initial waveform button state
+    const wfBtn = $('btn-toggle-waveform');
+    if (wfBtn) wfBtn.style.color = isWaveformEnabled ? 'var(--accent)' : 'var(--text-muted)';
 
     // Load file references from DB to keep the Reload button functional
     getFileFromDB('lastLyrics').then(file => {
@@ -1281,10 +2658,127 @@ document.addEventListener('drop', e => {
             lastAudioFile = file;
             // ONLY auto-load if the session says it was active
             if (audioFullname) {
-                handleAudioFile(file, true); 
+                // Delay heavy audio loading to ensure initial UI is responsive
+                setTimeout(() => handleAudioFile(file, true), 100); 
             } else {
                 updateFileUI(); // Show reload icon
             }
         }
     });
 })();
+
+function normalizeLines(tgts) {
+    if (!tgts) return;
+    tgts.forEach(l => {
+        if (l.words && l.words.length > 0) {
+            const hasRealText = l.words.some(w => {
+                const t = (w.text || "").trim();
+                return t !== "" && t !== "\\" && t !== "\"";
+            });
+            if (!hasRealText) {
+                l.words = null;
+                l.text = "";
+            }
+        }
+    });
+}
+
+async function decodeAudioForWaveform(arrayBuffer) {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    try {
+        // We use a copy of the buffer because decodeAudioData detaches the original buffer
+        const bufferCopy = arrayBuffer.slice(0);
+        audioBuffer = await ctx.decodeAudioData(bufferCopy);
+        waveformCache.clear();
+        renderTimeline();
+    } catch (e) {
+        console.error("Waveform decoding failed", e);
+    } finally {
+        ctx.close();
+    }
+}
+
+function drawWaveformForLine(container, line) {
+    if (!audioBuffer || !isWaveformEnabled) {
+        container.style.backgroundImage = 'none';
+        return;
+    }
+    
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    
+    if (width <= 0 || height <= 0) return;
+    
+    // Check cache to avoid re-rendering same segments
+    const cacheKey = `${line.id}-${line.startMs}-${line.endMs}-${width}-${height}`;
+    if (waveformCache.has(cacheKey)) {
+        container.style.backgroundImage = `url(${waveformCache.get(cacheKey)})`;
+        return;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    
+    const ctx = canvas.getContext('2d');
+    const data = audioBuffer.getChannelData(0);
+    const startIdx = Math.floor((line.startMs / 1000) * audioBuffer.sampleRate);
+    const endIdx = Math.floor((line.endMs / 1000) * audioBuffer.sampleRate);
+    const sampleDuration = endIdx - startIdx;
+    
+    if (sampleDuration <= 0) return;
+    
+    const amp = height / 2;
+    
+    // Find local max for normalization within this line
+    let localMax = 0.01;
+    for (let i = 0; i < width; i++) {
+        const idx = startIdx + Math.floor(i * (sampleDuration / width));
+        if (idx >= data.length) break;
+        const v = Math.abs(data[idx]);
+        if (v > localMax) localMax = v;
+    }
+
+    // Modern Waveform Style
+    ctx.fillStyle = 'rgba(255, 107, 0, 0.45)'; // Much clearer opacity
+    
+    const step = sampleDuration / width;
+    for (let i = 0; i < width; i++) {
+        let min = 1.0, max = -1.0;
+        const bucketStart = startIdx + Math.floor(i * step);
+        const bucketEnd = startIdx + Math.floor((i + 1) * step);
+        
+        for (let j = bucketStart; j < bucketEnd; j++) {
+            if (j >= data.length) break;
+            const datum = data[j];
+            if (datum < min) min = datum;
+            if (datum > max) max = datum;
+        }
+        
+        // Normalization and Symmetric Drawing
+        const peak = Math.max(Math.abs(min), Math.abs(max));
+        const normPeak = peak / localMax;
+        
+        // Draw bars with 2px width for better visibility
+        const h = Math.max(2, normPeak * height);
+        const y = (height - h) / 2; // Perfectly centered
+        
+        // Draw slightly wider bars for clarity
+        if (i % 2 === 0) {
+            ctx.fillRect(i, y, 2, h);
+        }
+    }
+    
+    // Add a subtle center line
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+    ctx.fillRect(0, amp, width, 1);
+    
+    const dataUrl = canvas.toDataURL();
+    waveformCache.set(cacheKey, dataUrl);
+    container.style.backgroundImage = `url(${dataUrl})`;
+    container.style.backgroundSize = '100% 100%';
+    container.style.backgroundRepeat = 'no-repeat';
+    container.style.backgroundPosition = '0 0';
+}
