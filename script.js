@@ -1998,6 +1998,27 @@ $('btn-join-words').onclick = () => {
     input.focus();
 };
 
+
+$('sw-inc').onclick = () => {
+    const el = $('split-word-index');
+    if (el.disabled) return;
+    const val = parseInt(el.value) || 1;
+    const max = parseInt(el.max) || 999;
+    if (val < max) {
+        el.value = val + 1;
+        updateSplitPreview();
+    }
+};
+$('sw-dec').onclick = () => {
+    const el = $('split-word-index');
+    if (el.disabled) return;
+    const val = parseInt(el.value) || 1;
+    if (val > 1) {
+        el.value = val - 1;
+        updateSplitPreview();
+    }
+};
+
 $('et-apply').onclick = () => {
   const inputVal = $('edit-text-input').value.trim();
   if (editingLine) {
@@ -2434,6 +2455,7 @@ $('btn-nudge-forward').onclick = () => {
     const amt = parseInt($('nudge-amount').value) || 100;
     nudgeTime(amt);
 };
+
 
 function nudgeTime(ms) {
     if (!lines.length) return;
