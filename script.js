@@ -261,6 +261,11 @@ function renderTimeline() {
             Use <b>WAV</b> or <b>FLAC</b> for sample-accurate sync. MP3 files may have slight timing offsets. 
             If audio feels off, use the <b>[</b> or <b>]</b> buttons/keys to nudge all timings.
         </div>
+        <div style="margin-top: 25px; font-size: 11px;">
+            <a href="https://github.com/dotslashgabut/lyricseditor" target="_blank" class="github-link">
+                <i class="fab fa-github" style="font-size: 16px;"></i> github.com/dotslashgabut/lyricseditor
+            </a>
+        </div>
       </div>`;
     statL.textContent=0;statW.textContent=0;return;
   }

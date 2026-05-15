@@ -383,6 +383,22 @@ html, body {
     font-size: 15px;
 }
 
+.github-link {
+    color: inherit;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    opacity: 0.5;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.github-link:hover {
+    opacity: 1;
+    color: var(--accent);
+}
+
 /* ── Add Line Button ── */
 .add-line-wrapper {
     display: flex;
