@@ -410,10 +410,6 @@ html, body {
     position: relative;
 }
 
-#timeline-container.searching .add-line-wrapper {
-    display: none !important;
-}
-
 .add-line-wrapper:hover {
     opacity: 1;
 }

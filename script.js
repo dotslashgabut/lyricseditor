@@ -262,8 +262,8 @@ function renderTimeline() {
             If audio feels off, use the <b>[</b> or <b>]</b> buttons/keys to nudge all timings.
         </div>
         <div style="margin-top: 25px; font-size: 11px;">
-            <a href="https://github.com/dummy/lyricseditor" target="_blank" class="github-link">
-                <i class="fab fa-github" style="font-size: 16px;"></i> github.com/dummy/lyricseditor
+            <a href="https://github.com/dotslashgabut/lyricseditor" target="_blank" class="github-link">
+                <i class="fab fa-github" style="font-size: 16px;"></i> github.com/dotslashgabut/lyricseditor
             </a>
         </div>
       </div>`;
@@ -281,7 +281,7 @@ function renderTimeline() {
     tr.className='timeline-track'; tr.id=`tc-${line.id}`;
     const isChecked = previouslySelected.has(line.id);
     tr.innerHTML=`<div class="track-controls"><input type="checkbox" class="line-checkbox" data-id="${line.id}" ${isChecked ? 'checked' : ''} style="cursor:pointer; margin-right:4px;" title="Select this line"><span style="color:var(--text-muted);font-size:11px;width:14px">${idx+1}</span><button class="track-play-btn" data-start="${line.startMs}" data-end="${line.endMs}"><i class="fas fa-play" style="font-size:9px;margin-left:1px"></i></button><div class="track-info">${fmt(line.startMs/1000)}</div></div><div class="track-content" id="trk-${line.id}"><div class="playback-indicator" id="pi-${line.id}"></div></div><div class="track-end-time">${fmt(line.endMs/1000)}</div><button class="icon-btn track-edit-btn" title="Edit Line Text"><i class="fas fa-edit"></i></button><button class="icon-btn track-delete-btn" title="Delete Line"><i class="fas fa-trash"></i></button>`;
-    
+    container.appendChild(tr);
     // Observer for lazy-loading waveforms
     const tc = tr.querySelector('.track-content');
     tc.dataset.lineId = line.id;
@@ -1265,10 +1265,7 @@ function applySmartMergeFromCues(refCues, refFormat) {
       }
       // Peek ahead: if there are trailing blank words before the next non-empty word, 
       // include them in the current line to preserve the silence/timing gap.
-      // CRITICAL: We stop if we hit the start of the next reference cue to avoid stealing words from it.
-      const nextRefStart = (idx < refCues.length - 1) ? refCues[idx + 1].startMs : Infinity;
       while (wordIdx < allWords.length && (!allWords[wordIdx].text || !allWords[wordIdx].text.trim())) {
-        if (allWords[wordIdx].startMs >= nextRefStart) break; 
         lineWords.push(allWords[wordIdx]);
         wordIdx++;
       }
@@ -1276,7 +1273,7 @@ function applySmartMergeFromCues(refCues, refFormat) {
 
     // Preserve the line if it has words OR if the reference specifically had an empty line/cue
     if (lineWords.length > 0 || refText === "") {
-      const start = lineWords.length > 0 ? lineWords[0].startMs : (newLines.length > 0 ? Math.max(newLines[newLines.length - 1].endMs, refCue.startMs) : refCue.startMs);
+      const start = lineWords.length > 0 ? lineWords[0].startMs : (newLines.length > 0 ? newLines[newLines.length - 1].endMs : refCue.startMs);
       let end = lineWords.length > 0 ? lineWords[lineWords.length - 1].endMs : (isTimestampBased ? refCue.endMs : start + 500);
       
       // For timestamp based empty lines, ensure they don't overlap with the next word's start
@@ -1306,7 +1303,6 @@ function applySmartMergeFromCues(refCues, refFormat) {
   }
   
   autoFillWords(newLines);
-  normalizeLines(newLines);
   lines = newLines;
   pushHistory();
   renderTimeline();
@@ -2493,29 +2489,18 @@ function nudgeTime(ms) {
     renderTimeline();
 }
 
-// ── Search ──
+// â”€â”€ Search â”€â”€
 $('search-input').oninput=e=>{
   const q=e.target.value.toLowerCase();
   $('search-clear').style.display = q ? 'block' : 'none';
-  if (q) container.classList.add('searching');
-  else container.classList.remove('searching');
-
   document.querySelectorAll('.timeline-track').forEach(t=>{t.style.display='';});
   if(!q)return;
-  lines.forEach(l=>{
-      const el=$(`tc-${l.id}`);
-      if(el) {
-          const text = (l.text || "").toLowerCase();
-          const wordMatch = l.words ? l.words.some(w => (w.text || "").toLowerCase().includes(q)) : false;
-          if(!text.includes(q) && !wordMatch) el.style.display='none';
-      }
-  });
+  lines.forEach(l=>{const el=$(`tc-${l.id}`);if(el&&!l.text.toLowerCase().includes(q))el.style.display='none';});
 };
 
 $('search-clear').onclick = () => {
     $('search-input').value = '';
     $('search-clear').style.display = 'none';
-    container.classList.remove('searching');
     document.querySelectorAll('.timeline-track').forEach(t => { t.style.display = ''; });
     $('search-input').focus();
 };
