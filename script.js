@@ -1220,20 +1220,59 @@ function applySmartMergeFromCues(refCues, refFormat) {
 
   if (!refCues.length) return alert("No lines found in reference.");
 
+  function getTagLength(startIdx) {
+      if (startIdx >= allWords.length) return 0;
+      const wText = allWords[startIdx].text.trim();
+      if (!wText.startsWith('[') && !wText.startsWith('(')) return 0;
+      const closeChar = wText.startsWith('[') ? ']' : ')';
+      if (wText.endsWith(closeChar)) return 1;
+      
+      let tempIdx = startIdx + 1;
+      while (tempIdx < allWords.length && tempIdx < startIdx + 5) {
+          const tText = allWords[tempIdx].text.trim();
+          if (tText.endsWith(closeChar)) return (tempIdx - startIdx) + 1;
+          if (tText.startsWith('[') || tText.startsWith('(')) return 0;
+          tempIdx++;
+      }
+      return 0;
+  }
+
   const newLines = [];
   let wordIdx = 0;
   const isTimestampBased = refFormat !== 'txt';
 
   refCues.forEach((refCue, idx) => {
-    const refText = refCue.text.trim();
+    while (wordIdx < allWords.length) {
+        const tagLen = getTagLength(wordIdx);
+        if (tagLen > 0) {
+            const tagWords = allWords.slice(wordIdx, wordIdx + tagLen);
+            newLines.push({
+                id: Date.now() + Math.random(),
+                startMs: tagWords[0].startMs,
+                endMs: tagWords[tagWords.length - 1].endMs,
+                text: tagWords.map(tw => tw.text).join(' '),
+                words: tagWords.map((tw) => ({ ...tw, id: Date.now() + Math.random() }))
+            });
+            wordIdx += tagLen;
+        } else {
+            break;
+        }
+    }
+
+    let refText = refCue.text.trim();
+    if (refText.match(/^\[.*?\]$/) || refText.match(/^\(.*?\)$/)) {
+        refText = "";
+    }
+    
     let lineWords = [];
 
     // Smart logic: prioritize text phrasing if the reference cue has text.
     // This avoids loose line-level timestamps from "sucking in" words from the next phrase.
     const refWords = refText.split(/\s+/).filter(w => w);
     const refWordsCount = refWords.length;
+    const refSignificantWordsCount = refWords.filter(w => w.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").length > 1).length;
     
-    let mode = (isTimestampBased && refWordsCount === 0) ? 'time' : 'text';
+    let mode = (isTimestampBased && refCue.text.trim() === "") ? 'time' : 'text';
     
     // If we have timestamps but the text also exists, check if the text matches the pool.
     // If it doesn't match, we assume it's a translation/different track and use temporal logic.
@@ -1250,16 +1289,93 @@ function applySmartMergeFromCues(refCues, refFormat) {
     if (mode === 'time') {
       const nextStart = (idx < refCues.length - 1) ? refCues[idx + 1].startMs : Infinity;
       while (wordIdx < allWords.length && allWords[wordIdx].startMs < nextStart) {
+        if (getTagLength(wordIdx) > 0) break;
         lineWords.push(allWords[wordIdx]);
         wordIdx++;
       }
     } else {
       let addedNonEmpty = 0;
-      while (wordIdx < allWords.length && addedNonEmpty < refWordsCount) {
+      let addedSignificant = 0;
+      
+      let targetBreakIdx = -1; 
+      let nextRefFirstWord = null;
+      if (refWordsCount > 0) {
+          for (let k = idx + 1; k < refCues.length; k++) {
+              let nextRefText = refCues[k].text.trim();
+              if (nextRefText.match(/^\[.*?\]$/) || nextRefText.match(/^\(.*?\)$/)) continue;
+              
+              const nextRefWords = nextRefText.split(/\s+/).filter(w => w);
+              if (nextRefWords.length > 0) {
+                  nextRefFirstWord = nextRefWords[0].toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+                  break;
+              }
+          }
+
+          if (nextRefFirstWord) {
+              let tempAdded = 0;
+              let tempIdx = wordIdx;
+              let matches = [];
+              
+              let maxWindow = Math.max(refWordsCount + 5, refWordsCount * 3);
+              while (tempIdx < allWords.length && tempAdded <= maxWindow) {
+                  if (getTagLength(tempIdx) > 0) break;
+                  const w = allWords[tempIdx];
+                  if (w.text && w.text.trim()) {
+                      const clean = w.text.trim().toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+                      const lowerBound = Math.max(1, Math.floor(refWordsCount / 2) - 1);
+                      
+                      let isMatch = clean === nextRefFirstWord;
+                      if (!isMatch && clean.length >= 3 && nextRefFirstWord.length >= 3) {
+                          if (clean.startsWith(nextRefFirstWord) || nextRefFirstWord.startsWith(clean) ||
+                              clean.endsWith(nextRefFirstWord) || nextRefFirstWord.endsWith(clean)) {
+                              isMatch = true;
+                          }
+                      }
+                      
+                      if (isMatch && tempAdded >= lowerBound) {
+                          matches.push({ idx: tempIdx, added: tempAdded });
+                      }
+                      tempAdded++;
+                  }
+                  tempIdx++;
+              }
+              
+              if (matches.length > 0) {
+                  matches.sort((a, b) => {
+                      const distA = Math.abs(a.added - refWordsCount);
+                      const distB = Math.abs(b.added - refWordsCount);
+                      if (distA === distB) return b.added - a.added;
+                      return distA - distB;
+                  });
+                  targetBreakIdx = matches[0].idx;
+              }
+          }
+      }
+
+      while (wordIdx < allWords.length) {
+        if (refWordsCount === 0) break;
+        if (getTagLength(wordIdx) > 0) break;
         const w = allWords[wordIdx];
+        const wIsNonEmpty = w.text && w.text.trim();
+        
+        if (targetBreakIdx !== -1) {
+            if (wordIdx === targetBreakIdx) {
+                break;
+            }
+        } else {
+            if (idx < refCues.length - 1) {
+                if (wIsNonEmpty && addedSignificant >= refSignificantWordsCount && addedNonEmpty >= refWordsCount) {
+                    break;
+                }
+            }
+        }
+        
         lineWords.push(w);
-        if (w.text && w.text.trim()) {
+        if (wIsNonEmpty) {
           addedNonEmpty++;
+          if (w.text.trim().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").length > 1) {
+              addedSignificant++;
+          }
         }
         wordIdx++;
       }
@@ -1268,14 +1384,26 @@ function applySmartMergeFromCues(refCues, refFormat) {
       // CRITICAL: We stop if we hit the start of the next reference cue to avoid stealing words from it.
       const nextRefStart = (idx < refCues.length - 1) ? refCues[idx + 1].startMs : Infinity;
       while (wordIdx < allWords.length && (!allWords[wordIdx].text || !allWords[wordIdx].text.trim())) {
+        if (getTagLength(wordIdx) > 0) break;
         if (allWords[wordIdx].startMs >= nextRefStart) break; 
         lineWords.push(allWords[wordIdx]);
         wordIdx++;
       }
     }
 
-    // Preserve the line if it has words OR if the reference specifically had an empty line/cue
-    if (lineWords.length > 0 || refText === "") {
+    let shouldPreserveEmpty = false;
+    if (refText === "") {
+        shouldPreserveEmpty = true;
+        if (newLines.length > 0 && wordIdx < allWords.length) {
+            const gap = allWords[wordIdx].startMs - newLines[newLines.length - 1].endMs;
+            if (gap < 500) {
+                shouldPreserveEmpty = false;
+            }
+        }
+    }
+
+    // Preserve the line if it has words OR if it's a valid empty line
+    if (lineWords.length > 0 || shouldPreserveEmpty) {
       const start = lineWords.length > 0 ? lineWords[0].startMs : (newLines.length > 0 ? Math.max(newLines[newLines.length - 1].endMs, refCue.startMs) : refCue.startMs);
       let end = lineWords.length > 0 ? lineWords[lineWords.length - 1].endMs : (isTimestampBased ? refCue.endMs : start + 500);
       
@@ -1294,15 +1422,33 @@ function applySmartMergeFromCues(refCues, refFormat) {
     }
   });
 
-  if (wordIdx < allWords.length) {
-    const rem = allWords.slice(wordIdx);
-    newLines.push({
-      id: newLines.length + 1,
-      startMs: rem[0].startMs,
-      endMs: rem[rem.length - 1].endMs,
-      text: rem.map(w => w.text).join(' '),
-      words: rem.map((w, widx) => ({ ...w, id: (newLines.length) * 1000 + widx + 1 }))
-    });
+  while (wordIdx < allWords.length) {
+      const tagLen = getTagLength(wordIdx);
+      if (tagLen > 0) {
+          const tagWords = allWords.slice(wordIdx, wordIdx + tagLen);
+          newLines.push({
+              id: Date.now() + Math.random(),
+              startMs: tagWords[0].startMs,
+              endMs: tagWords[tagWords.length - 1].endMs,
+              text: tagWords.map(tw => tw.text).join(' '),
+              words: tagWords.map((tw) => ({ ...tw, id: Date.now() + Math.random() }))
+          });
+          wordIdx += tagLen;
+      } else {
+          let tempIdx = wordIdx;
+          while (tempIdx < allWords.length && getTagLength(tempIdx) === 0) {
+              tempIdx++;
+          }
+          const rem = allWords.slice(wordIdx, tempIdx);
+          newLines.push({
+              id: Date.now() + Math.random(),
+              startMs: rem[0].startMs,
+              endMs: rem[rem.length - 1].endMs,
+              text: rem.map(w => w.text).join(' '),
+              words: rem.map((w) => ({ ...w, id: Date.now() + Math.random() }))
+          });
+          wordIdx = tempIdx;
+      }
   }
   
   autoFillWords(newLines);
