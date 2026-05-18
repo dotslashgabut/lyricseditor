@@ -47,6 +47,7 @@ let lastAudioFile = null, lastLyricsFile = null;
 let history = [{lines:[], audioFN:'', lyricsFN:'', audioFull:'', lyricsFull:'', origFN:'lyrics'}], histIdx = 0;
 let lastImportFormat = 'lrc', audioFilename = '', lyricsFilename = '', originalFilename = 'lyrics', editingLine = null;
 let audioBuffer = null, waveformCache = new Map(), waveformObserver = null;
+let smartToolMode = 'merge'; // 'merge', 'replace', or 'combined'
 
 const $ = id => document.getElementById(id);
 const playBtn=$('btn-play-pause'), stopBtn=$('btn-stop'), repeatBtn=$('btn-repeat');
@@ -101,6 +102,13 @@ function saveSession() {
             isWaveformEnabled: isWaveformEnabled
         };
         localStorage.setItem('lyricseditor_session', JSON.stringify(session));
+
+        // Persist history stack and index as well
+        const histSession = {
+            history: history,
+            histIdx: histIdx
+        };
+        localStorage.setItem('lyricseditor_history', JSON.stringify(histSession));
     } catch(e) { console.error("Auto-save failed", e); }
 }
 
@@ -123,16 +131,35 @@ function loadSession() {
             if (btn) btn.style.color = isWaveformEnabled ? 'var(--accent)' : 'var(--text-muted)';
         }
         
-        // Initial history entry for the loaded session
-        history = [{
-            lines: JSON.parse(JSON.stringify(lines)),
-            audioFN: audioFilename,
-            lyricsFN: lyricsFilename,
-            audioFull: audioFullname,
-            lyricsFull: lyricsFullname,
-            origFN: originalFilename
-        }];
-        histIdx = 0;
+        // Restore history stack and current index if they exist
+        const histData = localStorage.getItem('lyricseditor_history');
+        if (histData) {
+            try {
+                const parsedHist = JSON.parse(histData);
+                if (parsedHist && Array.isArray(parsedHist.history) && parsedHist.history.length > 0) {
+                    history = parsedHist.history;
+                    histIdx = typeof parsedHist.histIdx === 'number' ? parsedHist.histIdx : history.length - 1;
+                } else {
+                    initializeFallbackHistory();
+                }
+            } catch(e) {
+                initializeFallbackHistory();
+            }
+        } else {
+            initializeFallbackHistory();
+        }
+
+        function initializeFallbackHistory() {
+            history = [{
+                lines: JSON.parse(JSON.stringify(lines)),
+                audioFN: audioFilename,
+                lyricsFN: lyricsFilename,
+                audioFull: audioFullname,
+                lyricsFull: lyricsFullname,
+                origFN: originalFilename
+            }];
+            histIdx = 0;
+        }
         
         updateFileUI();
         renderTimeline();
@@ -974,7 +1001,13 @@ $('import-segments-smart').onclick = () => {
 
     lines = primaryCues;
     autoFillWords(lines);
-    applySmartMergeFromCues(refCues, pendingFormat);
+    if (smartToolMode === 'merge') {
+        applySmartMergeFromCues(refCues, pendingFormat);
+    } else if (smartToolMode === 'replace') {
+        applySmartReplaceTextFromCues(refCues, pendingFormat);
+    } else if (smartToolMode === 'combined') {
+        applyCombinedSmartMergeFromCues(refCues, pendingFormat);
+    }
     
     // Also apply the filename since this was a "Smart Import" (which replaces/initializes the timeline)
     if (pendingFile) {
@@ -1149,6 +1182,7 @@ $('tool-clear-all').onclick=()=>{
 $('tool-clear-session').onclick=()=>{
     if(confirm("Clear saved session and reset editor? This will refresh the page.")) {
         localStorage.removeItem('lyricseditor_session');
+        localStorage.removeItem('lyricseditor_history');
         clearDB().then(() => location.reload());
     }
 };
@@ -1199,15 +1233,633 @@ function mergeSelectedLines() {
   }
 }
 
+function openSmartMergeModal(mode) {
+  smartToolMode = mode;
+  const modal = $('smart-merge-modal');
+  const title = modal.querySelector('h3');
+  const desc = modal.querySelector('p');
+  const list = modal.querySelector('ul');
+  
+  if (mode === 'merge') {
+      title.innerHTML = '<i class="fas fa-wand-magic-sparkles"></i> Smart Merge Lines';
+      desc.innerHTML = 'Smart Merge will re-organize your current line breaks to match a <b>reference lyric file</b> (LRC, TXT, etc.).';
+      list.innerHTML = `
+          <li>Keep your current word-level timestamps</li>
+          <li>Automatic text alignment and grouping</li>
+          <li>Ideal for fixing bad line splitting from AI models</li>
+      `;
+  } else if (mode === 'replace') {
+      title.innerHTML = '<i class="fas fa-language"></i> Smart Replace Text';
+      desc.innerHTML = 'Smart Replace Text will refine word text and join word-blocks to match a <b>reference lyric file</b> (LRC, TXT, etc.).';
+      list.innerHTML = `
+          <li>Keep your current line structure (no line splits or merges)</li>
+          <li>Fuzzy word alignment to map text onto existing timestamps</li>
+          <li>Refine typos and join fragmented word-blocks seamlessly</li>
+      `;
+  } else if (mode === 'combined') {
+      title.innerHTML = '<i class="fas fa-wand-magic-sparkles"></i> Smart Merge + Replace Text';
+      desc.innerHTML = 'This combined tool will re-organize line breaks AND refine/join word-blocks using a <b>reference lyric file</b>.';
+      list.innerHTML = `
+          <li>Re-group lines to match reference phrasing</li>
+          <li>Refine all word block text and merge/join word blocks</li>
+          <li>Perfect for fully aligning low-quality timings to high-quality reference lyrics</li>
+      `;
+  }
+  modal.style.display = 'flex';
+}
+
 function applySmartMerge(refContent, refFormat) {
   const refCues = parseContent(refContent, refFormat);
-  applySmartMergeFromCues(refCues, refFormat);
+  if (smartToolMode === 'merge') {
+      applySmartMergeFromCues(refCues, refFormat);
+  } else if (smartToolMode === 'replace') {
+      applySmartReplaceTextFromCues(refCues, refFormat);
+  } else if (smartToolMode === 'combined') {
+      applyCombinedSmartMergeFromCues(refCues, refFormat);
+  }
+}
+
+function alignWordsWithReference(allWords, refWords) {
+  function cleanStr(s) {
+      return (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+
+  function levenshtein(a, b) {
+      const matrix = [];
+      for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+      for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+      for (let i = 1; i <= b.length; i++) {
+          for (let j = 1; j <= a.length; j++) {
+              if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                  matrix[i][j] = matrix[i - 1][j - 1];
+              } else {
+                  matrix[i][j] = Math.min(
+                      matrix[i - 1][j - 1] + 1,
+                      matrix[i][j - 1] + 1,
+                      matrix[i - 1][j] + 1
+                  );
+              }
+          }
+      }
+      return matrix[b.length][a.length];
+  }
+
+  function getSimilarity(a, b) {
+      const ca = cleanStr(a), cb = cleanStr(b);
+      if (!ca && !cb) return 1;
+      if (!ca || !cb) return 0;
+      if (ca === cb) return 1;
+      const maxLen = Math.max(ca.length, cb.length);
+      return 1 - (levenshtein(ca, cb) / maxLen);
+  }
+
+  function allocateTimes(wSlice, rSlice) {
+      const I = wSlice.length, J = rSlice.length;
+      const result = [];
+      if (J === I) {
+          for (let k = 0; k < J; k++) {
+              result.push({
+                  startMs: wSlice[k].startMs,
+                  endMs: wSlice[k].endMs,
+                  text: rSlice[k].text,
+                  refLineIdx: rSlice[k].refLineIdx,
+                  origLineId: wSlice[k].origLineId
+              });
+          }
+      } else if (J > I) {
+          // Splitting: distribute J reference words evenly across the combined timing of I word-blocks
+          const start = wSlice[0].startMs;
+          const end = wSlice[I-1].endMs;
+          const totalDur = end - start;
+          const durPerWord = totalDur / J;
+          for (let k = 0; k < J; k++) {
+              result.push({
+                  startMs: Math.round(start + durPerWord * k),
+                  endMs: Math.round(start + durPerWord * (k + 1)),
+                  text: rSlice[k].text,
+                  refLineIdx: rSlice[k].refLineIdx,
+                  origLineId: wSlice[0].origLineId
+              });
+          }
+      } else { // J < I
+          // Joining: Group I word-blocks into J chunks.
+          for (let k = 0; k < J - 1; k++) {
+              result.push({
+                  startMs: wSlice[k].startMs,
+                  endMs: wSlice[k].endMs,
+                  text: rSlice[k].text,
+                  refLineIdx: rSlice[k].refLineIdx,
+                  origLineId: wSlice[k].origLineId
+              });
+          }
+          const lastStart = wSlice[J-1].startMs;
+          const lastEnd = wSlice[I-1].endMs;
+          result.push({
+              startMs: lastStart,
+              endMs: lastEnd,
+              text: rSlice[J-1].text,
+              refLineIdx: rSlice[J-1].refLineIdx,
+              origLineId: wSlice[J-1].origLineId
+          });
+      }
+      return result;
+  }
+
+  const aligned = [];
+  let allIdx = 0;
+  let refIdx = 0;
+
+  while (allIdx < allWords.length && refIdx < refWords.length) {
+      const w = allWords[allIdx];
+      const wText = (w.text || "").trim();
+      const isTag = (wText.startsWith('[') && wText.endsWith(']')) || (wText.startsWith('(') && wText.endsWith(')'));
+      
+      if (isTag) {
+          // Keep editor tag as a separate block with empty text, keeping its original timing
+          aligned.push({
+              startMs: w.startMs,
+              endMs: w.endMs,
+              text: "", // Becomes empty line in editor
+              refLineIdx: refWords[refIdx].refLineIdx,
+              origLineId: w.origLineId
+          });
+          allIdx++;
+          continue;
+      }
+
+      let bestI = 1, bestJ = 1, bestScore = -1;
+
+      // Lookahead window size up to 4 word-blocks and 4 reference words
+      const maxLook = 4;
+      for (let i = 1; i <= maxLook && allIdx + i <= allWords.length; i++) {
+          for (let j = 1; j <= maxLook && refIdx + j <= refWords.length; j++) {
+              const sliceAll = allWords.slice(allIdx, allIdx + i);
+              const textAll = sliceAll.map(w => w.text).join("");
+              const textRef = refWords.slice(refIdx, refIdx + j).map(w => w.text).join(" ");
+              
+              let score = getSimilarity(textAll, textRef);
+              
+              // Give priority to exact matches
+              if (cleanStr(textAll) === cleanStr(refWords.slice(refIdx, refIdx + j).map(w => w.text).join(""))) {
+                  score = 1.0;
+              }
+              
+              if (score > bestScore) {
+                  bestScore = score;
+                  bestI = i;
+                  bestJ = j;
+              }
+          }
+      }
+
+      // If we found a reasonable match (score > 0.4), consume it.
+      // Otherwise, default to a 1-to-1 mapping.
+      if (bestScore < 0.4) {
+          bestI = 1;
+          bestJ = 1;
+      }
+
+      const matchedAll = allWords.slice(allIdx, allIdx + bestI);
+      const matchedRefSlice = refWords.slice(refIdx, refIdx + bestJ);
+
+      const allocated = allocateTimes(matchedAll, matchedRefSlice);
+      aligned.push(...allocated);
+
+      allIdx += bestI;
+      refIdx += bestJ;
+  }
+
+  // Consume any remaining word-blocks in allWords
+  while (allIdx < allWords.length) {
+      const w = allWords[allIdx];
+      const wText = (w.text || "").trim();
+      const isTag = (wText.startsWith('[') && wText.endsWith(']')) || (wText.startsWith('(') && wText.endsWith(')'));
+      aligned.push({
+          startMs: w.startMs,
+          endMs: w.endMs,
+          text: isTag ? "" : w.text,
+          refLineIdx: refWords.length > 0 ? refWords[refWords.length - 1].refLineIdx : 0,
+          origLineId: w.origLineId
+      });
+      allIdx++;
+  }
+
+  // If there are leftover reference words, split the last aligned word block evenly to fit all of them
+  if (refIdx < refWords.length && aligned.length > 0) {
+      const lastWord = aligned[aligned.length - 1];
+      const remainingWords = refWords.slice(refIdx);
+      const allRems = [lastWord, ...remainingWords];
+      const start = lastWord.startMs;
+      const end = lastWord.endMs;
+      const totalDur = end - start;
+      const durPerWord = totalDur / allRems.length;
+      
+      aligned.pop();
+      allRems.forEach((rw, k) => {
+          aligned.push({
+              startMs: Math.round(start + durPerWord * k),
+              endMs: Math.round(start + durPerWord * (k + 1)),
+              text: rw.text,
+              refLineIdx: rw.refLineIdx,
+              origLineId: lastWord.origLineId
+          });
+      });
+  }
+
+  return aligned;
+}
+
+function applySmartReplaceTextFromCues(refCues, refFormat) {
+  if (!lines.length) return;
+  autoFillWords(lines);
+  
+  // Flatten all words and tag with original line ID, merging punctuation-only blocks into previous words
+  const allWords = [];
+  lines.forEach(l => {
+      if (l.words) {
+          l.words.forEach(w => {
+              const text = (w.text || "").trim();
+              const isPunctOnly = text !== "" && /^[\.,]+$/.test(text);
+              if (isPunctOnly && allWords.length > 0) {
+                  const prev = allWords[allWords.length - 1];
+                  prev.text = (prev.text || "") + w.text;
+                  prev.endMs = Math.max(prev.endMs, w.endMs);
+              } else {
+                  allWords.push({ ...w, origLineId: l.id });
+              }
+          });
+      }
+  });
+  if (!allWords.length) return alert("No words found to replace.");
+
+  if (!refCues.length) return alert("No lines found in reference.");
+
+  // Flatten reference words while ignoring tags like [Verse 1], (verse), etc. and tracking refLineIdx
+  const refWords = [];
+  refCues.forEach((rc, lineIdx) => {
+      const text = rc.text.trim();
+      if (text.startsWith('[') && text.endsWith(']')) return;
+      if (text.startsWith('(') && text.endsWith(')')) return;
+      
+      const words = text.split(/\s+/).filter(w => w);
+      words.forEach(w => {
+          const cleanW = w.trim();
+          if (cleanW.startsWith('[') && cleanW.endsWith(']')) return;
+          if (cleanW.startsWith('(') && cleanW.endsWith(')')) return;
+          refWords.push({
+              text: cleanW,
+              refLineIdx: lineIdx
+          });
+      });
+  });
+  if (!refWords.length) return alert("No words found in reference text.");
+
+  // Run the alignment
+  const aligned = alignWordsWithReference(allWords, refWords);
+
+  // Group back strictly into original line structures
+  const lineMap = new Map();
+  lines.forEach(l => {
+      lineMap.set(l.id, {
+          id: l.id,
+          startMs: l.startMs,
+          endMs: l.endMs,
+          text: "",
+          words: []
+      });
+  });
+
+  let nextWordId = Math.max(0, ...allWords.map(w => Number(w.id) || 0)) + 1;
+  aligned.forEach(aw => {
+      const lineGroup = lineMap.get(aw.origLineId);
+      if (lineGroup) {
+          lineGroup.words.push({
+              id: nextWordId++,
+              startMs: aw.startMs,
+              endMs: aw.endMs,
+              text: aw.text
+          });
+      }
+  });
+
+  const newLines = [];
+  lines.forEach(l => {
+      const group = lineMap.get(l.id);
+      if (group) {
+          group.words.sort((a, b) => a.startMs - b.startMs);
+          group.text = group.words.map(w => w.text).join(' ').trim();
+          newLines.push({
+              id: l.id,
+              startMs: l.startMs,
+              endMs: l.endMs,
+              text: group.text,
+              words: group.words.length > 0 ? group.words : null
+          });
+      }
+  });
+
+  resolveTimingOverlaps(newLines);
+  autoFillWords(newLines);
+  normalizeLines(newLines);
+  lines = newLines;
+  pushHistory();
+  renderTimeline();
+  updateDisplay();
+}
+
+function applyCombinedSmartMergeFromCues(refCues, refFormat) {
+  if (!lines.length) return;
+  autoFillWords(lines);
+  
+  // Flatten all words and tag with original line ID, merging punctuation-only blocks into previous words
+  const allWords = [];
+  lines.forEach(l => {
+      if (l.words) {
+          l.words.forEach(w => {
+              const text = (w.text || "").trim();
+              const isPunctOnly = text !== "" && /^[\.,]+$/.test(text);
+              if (isPunctOnly && allWords.length > 0) {
+                  const prev = allWords[allWords.length - 1];
+                  prev.text = (prev.text || "") + w.text;
+                  prev.endMs = Math.max(prev.endMs, w.endMs);
+              } else {
+                  allWords.push({ ...w, origLineId: l.id });
+              }
+          });
+      }
+  });
+  if (!allWords.length) return alert("No words found to merge.");
+
+  if (!refCues.length) return alert("No lines found in reference.");
+
+  // Flatten reference words while ignoring tags like [Verse 1], (verse), etc. and tracking refLineIdx
+  const refWords = [];
+  refCues.forEach((rc, lineIdx) => {
+      const text = rc.text.trim();
+      if (text.startsWith('[') && text.endsWith(']')) return;
+      if (text.startsWith('(') && text.endsWith(')')) return;
+      
+      const words = text.split(/\s+/).filter(w => w);
+      words.forEach(w => {
+          const cleanW = w.trim();
+          if (cleanW.startsWith('[') && cleanW.endsWith(']')) return;
+          if (cleanW.startsWith('(') && cleanW.endsWith(')')) return;
+          refWords.push({
+              text: cleanW,
+              refLineIdx: lineIdx
+          });
+      });
+  });
+  if (!refWords.length) return alert("No words found in reference text.");
+
+  // Run the alignment
+  const aligned = alignWordsWithReference(allWords, refWords);
+
+  // Re-group aligned words matching the reference cues exactly (Smart Merge style)
+  let nextLineId = Math.max(0, ...lines.map(l => Number(l.id) || 0)) + 1;
+  let nextWordId = Math.max(0, ...allWords.map(w => Number(w.id) || 0)) + 1;
+
+  function getTagLength(startIdx) {
+      if (startIdx >= aligned.length) return 0;
+      const wText = aligned[startIdx].text.trim();
+      if (!wText.startsWith('[') && !wText.startsWith('(')) return 0;
+      const closeChar = wText.startsWith('[') ? ']' : ')';
+      if (wText.endsWith(closeChar)) return 1;
+      
+      let tempIdx = startIdx + 1;
+      while (tempIdx < aligned.length && tempIdx < startIdx + 5) {
+          const tText = aligned[tempIdx].text.trim();
+          if (tText.endsWith(closeChar)) return (tempIdx - startIdx) + 1;
+          if (tText.startsWith('[') || tText.startsWith('(')) return 0;
+          tempIdx++;
+      }
+      return 0;
+  }
+
+  const newLines = [];
+  let wordIdx = 0;
+  const isTimestampBased = refFormat !== 'txt';
+
+  refCues.forEach((refCue, idx) => {
+    while (wordIdx < aligned.length) {
+        const tagLen = getTagLength(wordIdx);
+        if (tagLen > 0) {
+            const tagWords = aligned.slice(wordIdx, wordIdx + tagLen);
+            newLines.push({
+                id: nextLineId++,
+                startMs: tagWords[0].startMs,
+                endMs: tagWords[tagWords.length - 1].endMs,
+                text: tagWords.map(tw => tw.text).join(' '),
+                words: tagWords.map((tw) => ({ ...tw, id: nextWordId++ }))
+            });
+            wordIdx += tagLen;
+        } else {
+            break;
+        }
+    }
+
+    let refText = refCue.text.trim();
+    if (refText.match(/^\[.*?\]$/) || refText.match(/^\(.*?\)$/)) {
+        refText = "";
+    }
+    
+    let lineWords = [];
+
+    const refWordsInCue = refText.split(/\s+/).filter(w => w);
+    const refWordsCount = refWordsInCue.length;
+    const refSignificantWordsCount = refWordsInCue.filter(w => w.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").length > 1).length;
+    
+    let mode = (isTimestampBased && refCue.text.trim() === "") ? 'time' : 'text';
+    
+    if (mode === 'text' && isTimestampBased && refWordsCount > 0) {
+        const poolWord = aligned[wordIdx] ? aligned[wordIdx].text.trim().toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"") : null;
+        const firstRefWord = refWordsInCue[0].toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+        
+        if (poolWord && poolWord !== firstRefWord) {
+            mode = 'time';
+        }
+    }
+
+    if (mode === 'time') {
+      const nextStart = (idx < refCues.length - 1) ? refCues[idx + 1].startMs : Infinity;
+      while (wordIdx < aligned.length && aligned[wordIdx].startMs < nextStart) {
+        if (getTagLength(wordIdx) > 0) break;
+        lineWords.push(aligned[wordIdx]);
+        wordIdx++;
+      }
+    } else {
+      let addedNonEmpty = 0;
+      let addedSignificant = 0;
+      
+      let targetBreakIdx = -1; 
+      let nextRefFirstWord = null;
+      if (refWordsCount > 0) {
+          for (let k = idx + 1; k < refCues.length; k++) {
+              let nextRefText = refCues[k].text.trim();
+              if (nextRefText.match(/^\[.*?\]$/) || nextRefText.match(/^\(.*?\)$/)) continue;
+              
+              const nextRefWords = nextRefText.split(/\s+/).filter(w => w);
+              if (nextRefWords.length > 0) {
+                  nextRefFirstWord = nextRefWords[0].toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+                  break;
+              }
+          }
+
+          if (nextRefFirstWord) {
+              let tempAdded = 0;
+              let tempIdx = wordIdx;
+              let matches = [];
+              
+              let maxWindow = Math.max(refWordsCount + 5, refWordsCount * 3);
+              while (tempIdx < aligned.length && tempAdded <= maxWindow) {
+                  if (getTagLength(tempIdx) > 0) break;
+                  const w = aligned[tempIdx];
+                  if (w.text && w.text.trim()) {
+                      const clean = w.text.trim().toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+                      const lowerBound = Math.max(1, Math.floor(refWordsCount / 2) - 1);
+                      
+                      let isMatch = clean === nextRefFirstWord;
+                      if (!isMatch && clean.length >= 3 && nextRefFirstWord.length >= 3) {
+                          if (clean.startsWith(nextRefFirstWord) || nextRefFirstWord.startsWith(clean) ||
+                              clean.endsWith(nextRefFirstWord) || nextRefFirstWord.endsWith(clean)) {
+                              isMatch = true;
+                          }
+                      }
+                      
+                      if (isMatch && tempAdded >= lowerBound) {
+                          matches.push({ idx: tempIdx, added: tempAdded });
+                      }
+                      tempAdded++;
+                  }
+                  tempIdx++;
+              }
+              
+              if (matches.length > 0) {
+                  matches.sort((a, b) => {
+                      const distA = Math.abs(a.added - refWordsCount);
+                      const distB = Math.abs(b.added - refWordsCount);
+                      if (distA === distB) return b.added - a.added;
+                      return distA - distB;
+                  });
+                  targetBreakIdx = matches[0].idx;
+              }
+          }
+      }
+
+      while (wordIdx < aligned.length) {
+        if (refWordsCount === 0) break;
+        if (getTagLength(wordIdx) > 0) break;
+        const w = aligned[wordIdx];
+        const wIsNonEmpty = w.text && w.text.trim();
+        
+        if (targetBreakIdx !== -1) {
+            if (wordIdx === targetBreakIdx) {
+                break;
+            }
+        } else {
+            if (idx < refCues.length - 1) {
+                if (wIsNonEmpty && addedSignificant >= refSignificantWordsCount && addedNonEmpty >= refWordsCount) {
+                    break;
+                }
+            }
+        }
+        
+        lineWords.push(w);
+        if (wIsNonEmpty) {
+          addedNonEmpty++;
+          if (w.text.trim().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").length > 1) {
+              addedSignificant++;
+          }
+        }
+        wordIdx++;
+      }
+      
+      const nextRefStart = (idx < refCues.length - 1) ? refCues[idx + 1].startMs : Infinity;
+      while (wordIdx < aligned.length && (!aligned[wordIdx].text || !aligned[wordIdx].text.trim())) {
+        if (getTagLength(wordIdx) > 0) break;
+        if (aligned[wordIdx].startMs >= nextRefStart) break; 
+        lineWords.push(aligned[wordIdx]);
+        wordIdx++;
+      }
+    }
+
+    let shouldPreserveEmpty = false;
+
+    if (lineWords.length > 0 || shouldPreserveEmpty) {
+      const start = lineWords.length > 0 ? lineWords[0].startMs : (newLines.length > 0 ? Math.max(newLines[newLines.length - 1].endMs, refCue.startMs) : refCue.startMs);
+      let end = lineWords.length > 0 ? lineWords[lineWords.length - 1].endMs : (isTimestampBased ? refCue.endMs : start + 500);
+      
+      if (lineWords.length === 0 && isTimestampBased && wordIdx < aligned.length) {
+          end = Math.min(end, aligned[wordIdx].startMs);
+      }
+
+      newLines.push({
+        id: idx + 1,
+        startMs: start,
+        endMs: Math.max(start, end),
+        text: lineWords.map(w => w.text).join(' '),
+        words: lineWords.length > 0 ? lineWords.map((w, widx) => ({ ...w, id: (idx + 1) * 1000 + widx + 1 })) : null
+      });
+    }
+  });
+
+  while (wordIdx < aligned.length) {
+      const tagLen = getTagLength(wordIdx);
+      if (tagLen > 0) {
+          const tagWords = aligned.slice(wordIdx, wordIdx + tagLen);
+          newLines.push({
+              id: nextLineId++,
+              startMs: tagWords[0].startMs,
+              endMs: tagWords[tagWords.length - 1].endMs,
+              text: tagWords.map(tw => tw.text).join(' '),
+              words: tagWords.map((tw) => ({ ...tw, id: nextWordId++ }))
+          });
+          wordIdx += tagLen;
+      } else {
+          let tempIdx = wordIdx;
+          while (tempIdx < aligned.length && getTagLength(tempIdx) === 0) {
+              tempIdx++;
+          }
+          const rem = aligned.slice(wordIdx, tempIdx);
+          newLines.push({
+              id: nextLineId++,
+              startMs: rem[0].startMs,
+              endMs: rem[rem.length - 1].endMs,
+              text: rem.map(w => w.text).join(' '),
+              words: rem.map((w) => ({ ...w, id: nextWordId++ }))
+          });
+          wordIdx = tempIdx;
+      }
+  }
+  
+  resolveTimingOverlaps(newLines);
+  autoFillWords(newLines);
+  normalizeLines(newLines);
+  lines = newLines;
+  pushHistory();
+  renderTimeline();
+  updateDisplay();
 }
 
 function applySmartMergeFromCues(refCues, refFormat) {
   if (!lines.length) return;
   autoFillWords(lines);
-  let allWords = lines.flatMap(l => l.words || []);
+  const allWords = [];
+  lines.forEach(l => {
+      if (l.words) {
+          l.words.forEach(w => {
+              const text = (w.text || "").trim();
+              const isPunctOnly = text !== "" && /^[\.,]+$/.test(text);
+              if (isPunctOnly && allWords.length > 0) {
+                  const prev = allWords[allWords.length - 1];
+                  prev.text = (prev.text || "") + w.text;
+                  prev.endMs = Math.max(prev.endMs, w.endMs);
+              } else {
+                  allWords.push({ ...w, origLineId: l.id });
+              }
+          });
+      }
+  });
   if (!allWords.length) return alert("No words found to merge.");
 
   if (!refCues.length) return alert("No lines found in reference.");
@@ -1387,15 +2039,6 @@ function applySmartMergeFromCues(refCues, refFormat) {
     }
 
     let shouldPreserveEmpty = false;
-    if (refText === "") {
-        shouldPreserveEmpty = true;
-        if (newLines.length > 0 && wordIdx < allWords.length) {
-            const gap = allWords[wordIdx].startMs - newLines[newLines.length - 1].endMs;
-            if (gap < 500) {
-                shouldPreserveEmpty = false;
-            }
-        }
-    }
 
     // Preserve the line if it has words OR if it's a valid empty line
     if (lineWords.length > 0 || shouldPreserveEmpty) {
@@ -1446,6 +2089,7 @@ function applySmartMergeFromCues(refCues, refFormat) {
       }
   }
   
+  resolveTimingOverlaps(newLines);
   autoFillWords(newLines);
   normalizeLines(newLines);
   lines = newLines;
@@ -1508,8 +2152,11 @@ $('tool-sequentialize-cascade').onclick = () => {
 $('tool-merge-lines').onclick = () => { mergeSelectedLines(); $('tools-menu').classList.remove('open'); };
 $('btn-merge-header').onclick = mergeSelectedLines;
 
-$('btn-smart-merge-header').onclick = () => $('smart-merge-modal').style.display = 'flex';
-$('tool-smart-merge').onclick = () => { $('tools-menu').classList.remove('open'); $('smart-merge-modal').style.display = 'flex'; };
+$('btn-smart-merge-header').onclick = () => openSmartMergeModal('merge');
+$('btn-smart-replace-header').onclick = () => openSmartMergeModal('replace');
+$('tool-smart-merge').onclick = () => { $('tools-menu').classList.remove('open'); openSmartMergeModal('merge'); };
+$('tool-smart-replace').onclick = () => { $('tools-menu').classList.remove('open'); openSmartMergeModal('replace'); };
+$('tool-smart-combined').onclick = () => { $('tools-menu').classList.remove('open'); openSmartMergeModal('combined'); };
 
 $('smart-merge-cancel').onclick = () => $('smart-merge-modal').style.display = 'none';
 $('smart-merge-close-top').onclick = () => $('smart-merge-modal').style.display = 'none';
@@ -2740,6 +3387,7 @@ $('btn-clear-all-header').onclick = () => {
 $('btn-reset-session-header').onclick = () => {
     if(confirm("Clear saved session and reset editor? This will refresh the page.")) {
         localStorage.removeItem('lyricseditor_session');
+        localStorage.removeItem('lyricseditor_history');
         clearDB().then(() => location.reload());
     }
 };
@@ -2940,6 +3588,87 @@ function normalizeLines(tgts) {
             }
         }
     });
+}
+
+function resolveTimingOverlaps(newLines) {
+  if (!newLines || newLines.length === 0) return;
+
+  // 1. Resolve word-level overlaps within each line
+  newLines.forEach(l => {
+      if (l.words && l.words.length > 0) {
+          // Sort words chronologically
+          l.words.sort((a, b) => a.startMs - b.startMs);
+          
+          // Enforce non-overlapping words
+          for (let k = 0; k < l.words.length - 1; k++) {
+              const curr = l.words[k];
+              const next = l.words[k+1];
+              if (curr.endMs > next.startMs) {
+                  const mid = Math.round((curr.startMs + next.endMs) / 2);
+                  if (mid > curr.startMs && mid < next.endMs) {
+                      curr.endMs = mid;
+                      next.startMs = mid;
+                  } else {
+                      curr.endMs = next.startMs;
+                  }
+              }
+              if (curr.endMs - curr.startMs < 50) {
+                  curr.endMs = curr.startMs + 50;
+              }
+          }
+          const lastW = l.words[l.words.length - 1];
+          if (lastW.endMs - lastW.startMs < 50) {
+              lastW.endMs = lastW.startMs + 50;
+          }
+
+          // Bound the line times tightly around its resolved word-blocks
+          l.startMs = l.words[0].startMs;
+          l.endMs = l.words[l.words.length - 1].endMs;
+      }
+  });
+
+  // 2. Resolve line-level overlaps chronologically
+  for (let i = 0; i < newLines.length - 1; i++) {
+      const currLine = newLines[i];
+      const nextLine = newLines[i+1];
+      
+      if (currLine.endMs > nextLine.startMs) {
+          if (currLine.words && currLine.words.length > 0 && nextLine.words && nextLine.words.length > 0) {
+              const lastWordEnd = currLine.words[currLine.words.length - 1].endMs;
+              const firstWordStart = nextLine.words[0].startMs;
+              
+              if (lastWordEnd > firstWordStart) {
+                  const midWord = Math.round((lastWordEnd + firstWordStart) / 2);
+                  currLine.words[currLine.words.length - 1].endMs = midWord;
+                  nextLine.words[0].startMs = midWord;
+                  
+                  // Cascade adjustments backwards inside current line
+                  for (let k = currLine.words.length - 1; k > 0; k--) {
+                      if (currLine.words[k].startMs < currLine.words[k-1].endMs) {
+                          currLine.words[k-1].endMs = currLine.words[k].startMs;
+                      }
+                  }
+                  // Cascade adjustments forwards inside next line
+                  for (let k = 0; k < nextLine.words.length - 1; k++) {
+                      if (nextLine.words[k].endMs > nextLine.words[k+1].startMs) {
+                          nextLine.words[k+1].startMs = nextLine.words[k].endMs;
+                      }
+                  }
+                  
+                  currLine.endMs = midWord;
+                  nextLine.startMs = midWord;
+              } else {
+                  currLine.endMs = lastWordEnd;
+                  nextLine.startMs = firstWordStart;
+              }
+          } else {
+              currLine.endMs = nextLine.startMs;
+          }
+      }
+      if (currLine.endMs - currLine.startMs < 100) {
+          currLine.endMs = currLine.startMs + 100;
+      }
+  }
 }
 
 async function decodeAudioForWaveform(arrayBuffer) {
