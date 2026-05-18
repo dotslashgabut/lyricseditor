@@ -67,16 +67,15 @@ function pushHistory() {
     lyricsFN: lyricsFilename,
     audioFull: audioFullname,
     lyricsFull: lyricsFullname,
-    origFN: originalFilename,
-    audioSrc: audio.src
+    origFN: originalFilename
   };
   
   // Don't push if it's the same as the current head (to avoid redundant undo steps)
   const current = history[histIdx];
   // More robust check for changes
   if (current && JSON.stringify(current.lines) === JSON.stringify(snap.lines)) {
-      // Still update filenames/audio sources if they changed even if lines didn't
-      if (current.audioSrc === snap.audioSrc && current.audioFN === snap.audioFN && current.lyricsFN === snap.lyricsFN) {
+      // Still update filenames if they changed even if lines didn't
+      if (current.audioFN === snap.audioFN && current.lyricsFN === snap.lyricsFN) {
         return;
       }
   }
@@ -131,8 +130,7 @@ function loadSession() {
             lyricsFN: lyricsFilename,
             audioFull: audioFullname,
             lyricsFull: lyricsFullname,
-            origFN: originalFilename,
-            audioSrc: ''
+            origFN: originalFilename
         }];
         histIdx = 0;
         
@@ -183,17 +181,10 @@ function applySnapshot(snap) {
   audioFullname = snap.audioFull;
   lyricsFullname = snap.lyricsFull;
   originalFilename = snap.origFN;
-  if (audio.src !== (snap.audioSrc || "")) {
-      try {
-          if (!snap.audioSrc) {
-              audio.removeAttribute('src');
-              audio.load();
-          } else {
-              audio.src = snap.audioSrc;
-              audio.load();
-          }
-      } catch (e) { console.warn("Failed to restore audio source", e); }
-  }
+  
+  // Clear waveform cache to ensure correct redrawing on undo/redo
+  waveformCache.clear();
+  
   updateFileUI();
   renderTimeline();
   updateDisplay();
@@ -239,7 +230,7 @@ function renderTimeline() {
   const previouslySelected = new Set();
   document.querySelectorAll('.line-checkbox:checked').forEach(cb => {
     const tr = cb.closest('.timeline-track');
-    if (tr) previouslySelected.add(parseInt(tr.id.replace('tc-', '')));
+    if (tr) previouslySelected.add(Number(tr.id.replace('tc-', '')));
   });
 
   container.innerHTML = '';
@@ -352,13 +343,14 @@ function observeWaveforms() {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
         const tc = entry.target;
-        const lineId = parseInt(tc.dataset.lineId);
+        const lineId = Number(tc.dataset.lineId);
         const line = lines.find(l => l.id === lineId);
         if (line && audioBuffer && isWaveformEnabled) {
-          drawWaveformForLine(tc, line);
-          // We can keep observing if we want it to redraw on resize, 
-          // but for now let's just draw once per render.
-          waveformObserver.unobserve(tc);
+          const success = drawWaveformForLine(tc, line);
+          if (success) {
+            // Only stop observing if the drawing succeeded (i.e. size was > 0)
+            waveformObserver.unobserve(tc);
+          }
         }
       }
     });
@@ -633,7 +625,7 @@ function updateDisplay(){
   // Update all track play buttons
   document.querySelectorAll('.track-play-btn').forEach(btn => {
     const tr = btn.closest('.timeline-track');
-    const lineId = tr ? parseInt(tr.id.replace('tc-', '')) : null;
+    const lineId = tr ? Number(tr.id.replace('tc-', '')) : null;
     const icon = btn.querySelector('i');
     
     if (lineId === activeLineId && isPlaying) {
@@ -1162,7 +1154,7 @@ $('tool-clear-session').onclick=()=>{
 };
 
 function mergeSelectedLines() {
-  const checks = Array.from(document.querySelectorAll('.line-checkbox:checked')).map(c => parseInt(c.dataset.id));
+  const checks = Array.from(document.querySelectorAll('.line-checkbox:checked')).map(c => Number(c.dataset.id));
   if (checks.length > 1) {
     const selected = lines.filter(l => checks.includes(l.id));
     const first = selected[0], last = selected[selected.length - 1];
@@ -1190,7 +1182,7 @@ function mergeSelectedLines() {
           const prevWord = allWords[allWords.length - 1];
           if (prevWord.endMs < l.startMs) prevWord.endMs = l.startMs;
         }
-        allWords.push({ id: Date.now() + Math.random(), text: "", startMs: l.startMs, endMs: l.endMs });
+        allWords.push({ id: Math.floor(Math.random() * 1000000), text: "", startMs: l.startMs, endMs: l.endMs });
       }
     });
     first.words = allWords;
@@ -1220,6 +1212,9 @@ function applySmartMergeFromCues(refCues, refFormat) {
 
   if (!refCues.length) return alert("No lines found in reference.");
 
+  let nextLineId = Math.max(0, ...lines.map(l => Number(l.id) || 0)) + 1;
+  let nextWordId = Math.max(0, ...allWords.map(w => Number(w.id) || 0)) + 1;
+
   function getTagLength(startIdx) {
       if (startIdx >= allWords.length) return 0;
       const wText = allWords[startIdx].text.trim();
@@ -1247,11 +1242,11 @@ function applySmartMergeFromCues(refCues, refFormat) {
         if (tagLen > 0) {
             const tagWords = allWords.slice(wordIdx, wordIdx + tagLen);
             newLines.push({
-                id: Date.now() + Math.random(),
+                id: nextLineId++,
                 startMs: tagWords[0].startMs,
                 endMs: tagWords[tagWords.length - 1].endMs,
                 text: tagWords.map(tw => tw.text).join(' '),
-                words: tagWords.map((tw) => ({ ...tw, id: Date.now() + Math.random() }))
+                words: tagWords.map((tw) => ({ ...tw, id: nextWordId++ }))
             });
             wordIdx += tagLen;
         } else {
@@ -1427,11 +1422,11 @@ function applySmartMergeFromCues(refCues, refFormat) {
       if (tagLen > 0) {
           const tagWords = allWords.slice(wordIdx, wordIdx + tagLen);
           newLines.push({
-              id: Date.now() + Math.random(),
+              id: nextLineId++,
               startMs: tagWords[0].startMs,
               endMs: tagWords[tagWords.length - 1].endMs,
               text: tagWords.map(tw => tw.text).join(' '),
-              words: tagWords.map((tw) => ({ ...tw, id: Date.now() + Math.random() }))
+              words: tagWords.map((tw) => ({ ...tw, id: nextWordId++ }))
           });
           wordIdx += tagLen;
       } else {
@@ -1441,11 +1436,11 @@ function applySmartMergeFromCues(refCues, refFormat) {
           }
           const rem = allWords.slice(wordIdx, tempIdx);
           newLines.push({
-              id: Date.now() + Math.random(),
+              id: nextLineId++,
               startMs: rem[0].startMs,
               endMs: rem[rem.length - 1].endMs,
               text: rem.map(w => w.text).join(' '),
-              words: rem.map((w) => ({ ...w, id: Date.now() + Math.random() }))
+              words: rem.map((w) => ({ ...w, id: nextWordId++ }))
           });
           wordIdx = tempIdx;
       }
@@ -1537,7 +1532,7 @@ $('input-smart-merge').onchange = e => {
 
 let linesToSplit = [];
 function openSplitModal() {
-  const checks=Array.from(document.querySelectorAll('.line-checkbox:checked')).map(c=>parseInt(c.dataset.id));
+  const checks=Array.from(document.querySelectorAll('.line-checkbox:checked')).map(c=>Number(c.dataset.id));
   if(checks.length === 0) return alert("Please select at least one line to split.");
   linesToSplit = lines.filter(l=>checks.includes(l.id));
   
@@ -1587,7 +1582,11 @@ $('split-apply').onclick=()=>{
   const method = document.querySelector('input[name="split-method"]:checked').value;
   const splitWordIdx = parseInt($('split-word-index').value);
   const newLines=[];
-  let maxId=lines.reduce((m,l)=>Math.max(m,l.id),0);
+  let maxId = lines.reduce((m, l) => {
+    const idNum = Number(l.id);
+    return isNaN(idNum) ? m : Math.max(m, idNum);
+  }, 0);
+  maxId = Math.floor(maxId);
   const checks = linesToSplit.map(l=>l.id);
   
   lines.forEach(l=>{
@@ -1631,13 +1630,13 @@ $('tool-clear-words').onclick=()=>{lines.forEach(l=>l.words=[]);pushHistory();re
 $('tool-distribute-words').onclick=()=>{const checks=document.querySelectorAll('.line-checkbox:checked');const sIds=Array.from(checks).map(c=>parseInt(c.dataset.id));const tgts=sIds.length?lines.filter(l=>sIds.includes(l.id)):lines;tgts.forEach(l=>{if(l.words&&l.words.length){const p=(l.endMs-l.startMs)/l.words.length;l.words.forEach((w,i)=>{w.startMs=Math.round(l.startMs+p*i);w.endMs=Math.round(l.startMs+p*(i+1));});}});pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
 $('tool-merge-words-in-lines').onclick=()=>{
   const checks=document.querySelectorAll('.line-checkbox:checked');
-  const sIds=Array.from(checks).map(c=>parseInt(c.dataset.id));
+  const sIds=Array.from(checks).map(c=>Number(c.dataset.id));
   const tgts=sIds.length?lines.filter(l=>sIds.includes(l.id)):lines;
   tgts.forEach(l=>{
     if(l.words && l.words.length > 0){
       const startMs = l.words[0].startMs;
       const endMs = l.words[l.words.length - 1].endMs;
-      l.words = [{ id: Date.now() + Math.random(), text: l.text.trim(), startMs, endMs }];
+      l.words = [{ id: Math.floor(Math.random() * 1000000), text: l.text.trim(), startMs, endMs }];
     }
   });
   pushHistory();renderTimeline();$('tools-menu').classList.remove('open');
@@ -1645,14 +1644,14 @@ $('tool-merge-words-in-lines').onclick=()=>{
 
 $('tool-join-words').onclick=()=>{
   const checks=document.querySelectorAll('.line-checkbox:checked');
-  const sIds=Array.from(checks).map(c=>parseInt(c.dataset.id));
+  const sIds=Array.from(checks).map(c=>Number(c.dataset.id));
   const tgts=sIds.length?lines.filter(l=>sIds.includes(l.id)):lines;
   tgts.forEach(l=>{
     l.text = l.text.replace(/\s+/g, '');
     if(l.words && l.words.length > 0){
         const startMs = l.words[0].startMs;
         const endMs = l.words[l.words.length - 1].endMs;
-        l.words = [{ id: Date.now() + Math.random(), text: l.text, startMs, endMs }];
+        l.words = [{ id: Math.floor(Math.random() * 1000000), text: l.text, startMs, endMs }];
     }
   });
   pushHistory();renderTimeline();$('tools-menu').classList.remove('open');
@@ -1872,7 +1871,7 @@ $('shift-cancel').onclick=()=>$('shift-modal').style.display='none';
 $('shift-apply').onclick=()=>{
 const ms=parseInt($('shift-amount').value)||0;
   const checks = document.querySelectorAll('.line-checkbox:checked');
-  const selectedIds = Array.from(checks).map(c => parseInt(c.dataset.id));
+  const selectedIds = Array.from(checks).map(c => Number(c.dataset.id));
   const targetLines = selectedIds.length ? lines.filter(l => selectedIds.includes(l.id)) : lines;
   targetLines.forEach(l=>{l.startMs=Math.max(0,l.startMs+ms);l.endMs=Math.max(0,l.endMs+ms);if(l.words)l.words.forEach(w=>{w.startMs=Math.max(0,w.startMs+ms);w.endMs=Math.max(0,w.endMs+ms);});});
   pushHistory();renderTimeline();$('shift-modal').style.display='none';
@@ -1918,7 +1917,7 @@ $('fr-apply').onclick=()=>{
   const f=$('find-text').value, r=$('replace-text').value;
   if(!f)return;
   const checks = document.querySelectorAll('.line-checkbox:checked');
-  const selectedIds = Array.from(checks).map(c => parseInt(c.dataset.id));
+  const selectedIds = Array.from(checks).map(c => Number(c.dataset.id));
   const targetLines = selectedIds.length ? lines.filter(l => selectedIds.includes(l.id)) : lines;
   targetLines.forEach(l=>{l.text=l.text.split(f).join(r);if(l.words)l.words.forEach(w=>w.text=w.text.split(f).join(r));});
   pushHistory();renderTimeline();$('find-replace-modal').style.display='none';
@@ -2618,7 +2617,7 @@ function nudgeTime(ms) {
     // Check if there are any selected lines
     const selectedIds = new Set();
     document.querySelectorAll('.line-checkbox:checked').forEach(cb => {
-        const id = parseInt(cb.closest('.timeline-track').id.replace('tc-', ''));
+        const id = Number(cb.closest('.timeline-track').id.replace('tc-', ''));
         selectedIds.add(id);
     });
 
@@ -2749,7 +2748,7 @@ $('btn-delete-selected').onclick = () => {
     const checks = document.querySelectorAll('.line-checkbox:checked');
     if (!checks.length) return;
     if (confirm(`Are you sure you want to delete ${checks.length} selected lines?`)) {
-        const selectedIds = Array.from(checks).map(c => parseInt(c.dataset.id));
+        const selectedIds = Array.from(checks).map(c => Number(c.dataset.id));
         lines = lines.filter(l => !selectedIds.includes(l.id));
         pushHistory();
         renderTimeline();
@@ -2963,13 +2962,13 @@ async function decodeAudioForWaveform(arrayBuffer) {
 function drawWaveformForLine(container, line) {
     if (!audioBuffer || !isWaveformEnabled) {
         container.style.backgroundImage = 'none';
-        return;
+        return false;
     }
     
     const width = container.clientWidth;
     const height = container.clientHeight;
     
-    if (width <= 0 || height <= 0) return;
+    if (width <= 0 || height <= 0) return false;
     
     // Check cache to avoid re-rendering same segments
     const cacheKey = `${line.id}-${line.startMs}-${line.endMs}-${width}-${height}`;
@@ -3041,4 +3040,5 @@ function drawWaveformForLine(container, line) {
     container.style.backgroundSize = '100% 100%';
     container.style.backgroundRepeat = 'no-repeat';
     container.style.backgroundPosition = '0 0';
+    return true;
 }
