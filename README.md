@@ -144,6 +144,15 @@ These advanced tools are designed to fix one of the most common issues in lyric 
 
 ## 🌟 What's New
 
+### v0.0.6
+
+- **Full Undo/Redo Session Persistence**: The entire multi-step undo/redo history stack (`history`) and current pointer index (`histIdx`) are now securely serialized and persisted in `localStorage` alongside your session. Refreshing (F5) or reloading the page no longer wipes out your undo/redo history, letting you step back and forth through your changes seamlessly!
+- **Punctuation-Only Word-Block Merger**: Solves the issue of floating punctuation word-blocks (like `.` or `,`) by automatically merging them into their preceding word blocks (appending the text and extending the duration). This cleans up the alignment pool and prevents timing gaps or syllable-shift conflicts.
+- **Smart Tag-Aware Alignment**: Automatically isolates bracketed or parenthesized tags (like `[Music]`, `(Instrumental)`) in the primary timeline during alignment. Skipped tags keep their exact original timings and are neatly converted into clean timeline empty lines, ensuring they never shift or pull subsequent lyric words out of sync.
+- **Powerhouse Combined Smart Merge & Replace Tool**: Added the "Smart Merge + Replace Text" tool to the global list, combining structural alignment of AI line breaks with advanced reference-based text replacement.
+- **Overlap-Free Timeline Structure**: Updated both standard and combined reference-based merge engines to ignore empty reference lines, completely preventing redundant timing overlaps and keeping your editor layout perfectly compact.
+- **Direct Toolbar Shortcuts**: Added a new direct-access shortcut button for **Smart Replace Text** in the header toolbar. Featuring a responsive `desktop-only` design, it automatically adjusts for tablet and mobile views.
+
 ### v0.0.5
 
 - **Enhanced Navigation Suite**: Added high-precision "Jump to Line" (**G**) and "Jump to Word" (**W**) modals with vertical adjustment controls for lightning-fast timeline navigation.
