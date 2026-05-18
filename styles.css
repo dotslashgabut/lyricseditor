@@ -950,11 +950,7 @@ html, body {
         height: auto;
     }
 
-    .progress-bar-container {
-        width: 100%;
-        order: -1;
-        margin-bottom: 8px;
-    }
+    /* Progress bar layout is handled by desktop flex or mobile portrait flex-basis */
 
     .time-display {
         font-size: 11px;
@@ -1254,10 +1250,24 @@ html, body {
     opacity: 1 !important;
 }
 
-/* ── Desktop Only Helper ── */
+/* ── Desktop Only Helper & Mobile Specifics ── */
 @media (max-width: 600px) {
     .desktop-only {
         display: none !important;
+    }
+
+    .player-controls {
+        justify-content: center;
+    }
+
+    .progress-bar-container {
+        flex-basis: 100%;
+        order: -1;
+        margin-bottom: 8px;
+    }
+
+    .volume-control {
+        display: none;
     }
 }
 
