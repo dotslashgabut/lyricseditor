@@ -324,6 +324,15 @@ function parseMetadata(content, format) {
   return metadata;
 }
 
+function decodeHTMLEntities(text) {
+  if (!text) return text;
+  return text.replace(/&#39;/g, "'")
+             .replace(/&quot;/g, '"')
+             .replace(/&amp;/g, '&')
+             .replace(/&lt;/g, '<')
+             .replace(/&gt;/g, '>');
+}
+
 function parseContent(content, format) {
   let cues = [];
   switch(format) {
@@ -340,6 +349,14 @@ function parseContent(content, format) {
     case 'audacity': cues = parseAudacity(content); break;
     default: cues = parseSRT(content);
   }
+
+  cues.forEach(c => {
+    c.text = decodeHTMLEntities(c.text);
+    if (c.words) {
+      c.words.forEach(w => w.text = decodeHTMLEntities(w.text));
+    }
+  });
+
   // Safety pass: ensure the very last cue has a duration if missing
   if (cues.length > 0) {
     const last = cues[cues.length - 1];

@@ -309,7 +309,7 @@ function renderTimeline() {
       const el = document.createElement('div'); el.className='word-block'; el.id=`w-${w.id}`;
       if(w.isPl) el.style.opacity = '0.7';
       const wText = (w.text || "").trim();
-      const isActuallyBlank = !wText || wText === "\\" || wText === "[Empty]" || wText === "\"";
+      const isActuallyBlank = !wText || wText === "\\" || wText === "[Empty]";
       if(isActuallyBlank) el.classList.add('blank-word');
       
       el.innerHTML=`<div class="resize-handle left"></div><div class="word-text">${w.text || ""}</div><div class="word-duration">${((w.endMs-w.startMs)/1000).toFixed(3)}s</div><div class="resize-handle right"></div>`;
@@ -2357,7 +2357,7 @@ function mergeEmptyWordsInLine(l) {
   const pass1 = [];
   l.words.forEach(w => {
     const t = (w.text || "").trim();
-    const isBlank = !t || t === "\\" || t === "\"";
+    const isBlank = !t || t === "\\";
     if(!isBlank) {
       pass1.push({...w});
     } else {
@@ -2456,7 +2456,7 @@ $('tool-hotfix').onclick = () => { performHotFix(); $('tools-menu').classList.re
     // Remove zero-duration or invalid blank/ghost blocks
     l.words = l.words.filter(w => {
         const t = (w.text || "").trim();
-        if (!t || t === "\\" || t === "\"") {
+        if (!t || t === "\\") {
             if (w.endMs <= w.startMs) return false;
             if (w.startMs === 0 && w.endMs === 0) return false;
         }
@@ -2771,7 +2771,7 @@ $('btn-insert-blank').onclick = () => {
 $('btn-remove-blank').onclick = () => {
     const input = $('edit-text-input');
     // Remove \ and up to one space on each side to cleanly rejoin split words like "ente \ rpr \ ise"
-    input.value = input.value.replace(/\s?[\\"]\s?/g, '').replace(/\s+/g, ' ').trim();
+    input.value = input.value.replace(/\s?[\\]\s?/g, '').replace(/\s+/g, ' ').trim();
     updateEditHighlighter();
     pushModalHistory();
     input.focus();
@@ -2824,7 +2824,7 @@ $('et-apply').onclick = () => {
   const inputVal = $('edit-text-input').value.trim();
   if (editingLine) {
     // Fix tokenization: ensure \ and " are treated as separate tokens even if attached to words
-    const newTokens = inputVal.replace(/([\\"])/g, ' $1 ').split(/\s+/).filter(t => t);
+    const newTokens = inputVal.replace(/([\\])/g, ' $1 ').split(/\s+/).filter(t => t);
     const oldWords = (editingLine.words && editingLine.words.length > 0)
         ? editingLine.words
         : editingLine.text.trim().split(/\s+/).filter(t => t).map((t, i, arr) => {
@@ -2847,7 +2847,7 @@ $('et-apply').onclick = () => {
             // ON: Sequential â€” slot N keeps its timestamp, text changes
             resultWords = oldWords.map((w, i) => ({
                 ...w,
-                text: (newTokens[i] === '\\' || newTokens[i] === '"') ? "" : newTokens[i]
+                text: (newTokens[i] === '\\') ? "" : newTokens[i]
             }));
         } else {
             // OFF (default): Smart â€” words carry their DURATION to new positions
@@ -2856,7 +2856,7 @@ $('et-apply').onclick = () => {
 
             // First pass: Match identical words (case-insensitive)
             newTokens.forEach((t, i) => {
-                const text = (t === '\\' || t === '"') ? "" : t;
+                const text = (t === '\\') ? "" : t;
                 const matchIdx = oldWords.findIndex((ow, idx) =>
                     !usedOld.has(idx) && ow.text.toLowerCase() === text.toLowerCase()
                 );
@@ -2875,7 +2875,7 @@ $('et-apply').onclick = () => {
             let remIdx = 0;
             newTokens.forEach((t, i) => {
                 if (!matched[i]) {
-                    const text = (t === '\\' || t === '"') ? "" : t;
+                    const text = (t === '\\') ? "" : t;
                     if (remIdx < remainingOld.length) {
                         matched[i] = {
                             text: text,
@@ -2922,7 +2922,7 @@ $('et-apply').onclick = () => {
     if (keepStructure) {
         const resultWords = [];
         newTokens.forEach((t, i) => {
-            const text = (t === '\\' || t === '"') ? "" : t;
+            const text = (t === '\\') ? "" : t;
             if (i < oldWords.length) {
                 resultWords.push({ ...oldWords[i], text: text });
             } else {
@@ -2949,7 +2949,7 @@ $('et-apply').onclick = () => {
             for (let j=1; j<=m; j++) {
                 const w1 = arr1[i-1].text.toLowerCase();
                 const w2 = arr2[j-1].toLowerCase();
-                const isMatch = (w1 === w2) || (w1 === "" && (w2 === "\\" || w2 === '"'));
+                const isMatch = (w1 === w2) || (w1 === "" && (w2 === "\\"));
                 if (isMatch) dp[i][j] = dp[i-1][j-1] + 1;
                 else dp[i][j] = Math.max(dp[i-1][j], dp[i][j-1]);
             }
@@ -2958,7 +2958,7 @@ $('et-apply').onclick = () => {
         while (i>0 && j>0) {
             const w1 = arr1[i-1].text.toLowerCase();
             const w2 = arr2[j-1].toLowerCase();
-            const isMatch = (w1 === w2) || (w1 === "" && (w2 === "\\" || w2 === '"'));
+            const isMatch = (w1 === w2) || (w1 === "" && (w2 === "\\"));
             if (isMatch) {
                 res.unshift({oldIdx: i-1, newIdx: j-1}); i--; j--;
             } else if (dp[i-1][j] > dp[i][j-1]) i--; else j--;
@@ -2983,7 +2983,7 @@ $('et-apply').onclick = () => {
         if (curr.oldIdx !== -1) {
             resultWords.push({
                 ...oldWords[curr.oldIdx],
-                text: (newTokens[curr.newIdx] === "\\" || newTokens[curr.newIdx] === '"') ? "" : newTokens[curr.newIdx]
+                text: (newTokens[curr.newIdx] === "\\") ? "" : newTokens[curr.newIdx]
             });
         }
 
@@ -3002,7 +3002,7 @@ $('et-apply').onclick = () => {
                 const dur = spanEnd - spanStart;
                 const perW = dur / newInGap.length;
                 newInGap.forEach((t, idx) => {
-                    const isBlank = (t === "\\" || t === '"');
+                    const isBlank = (t === "\\");
                     resultWords.push({
                         id: oldInGap[idx] ? oldInGap[idx].id : (Date.now() + Math.random()),
                         text: isBlank ? "" : t,
@@ -3049,7 +3049,7 @@ $('et-apply').onclick = () => {
                 available = Math.max(minNeeded, insertEnd - insertStart);
                 const perW = available / newInGap.length;
                 newInGap.forEach((t, idx) => {
-                    const isBlank = (t === "\\" || t === '"');
+                    const isBlank = (t === "\\");
                     resultWords.push({
                         id: Date.now() + Math.random(),
                         text: isBlank ? "" : t,
