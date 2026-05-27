@@ -877,13 +877,11 @@ html, body {
 /* ── Responsive Adjustments for Medium Screens ── */
 @media (max-width: 1280px) {
     #btn-export span,
-    #btn-load-audio span,
-    #btn-load-lyrics span {
+    #btn-hotfix span {
         display: none;
     }
     #btn-export,
-    #btn-load-audio,
-    #btn-load-lyrics {
+    #btn-hotfix {
         width: 36px;
         padding: 0;
         justify-content: center;
