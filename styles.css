@@ -876,10 +876,14 @@ html, body {
 
 /* ── Responsive Adjustments for Medium Screens ── */
 @media (max-width: 1280px) {
-    #btn-export span {
+    #btn-export span,
+    #btn-load-audio span,
+    #btn-load-lyrics span {
         display: none;
     }
-    #btn-export {
+    #btn-export,
+    #btn-load-audio,
+    #btn-load-lyrics {
         width: 36px;
         padding: 0;
         justify-content: center;
