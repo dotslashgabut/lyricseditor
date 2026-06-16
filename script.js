@@ -1,4 +1,4 @@
-// â”€â”€ Database (IndexedDB) for True Persistence â”€â”€
+// Database (IndexedDB) for True Persistence
 const DB_NAME = 'LyricsEditorDB', DB_STORE = 'files';
 function openDB() {
     return new Promise((resolve, reject) => {
@@ -37,7 +37,7 @@ async function deleteFileFromDB(key) {
     } catch(e) { console.error("DB Delete Failed", e); }
 }
 
-// â”€â”€ Global State â”€â”€
+// Global State
 let audio = new Audio(), lines = [];
 let currentTime = 0, duration = 0, rafId = null, activeLineId = null, lockedWord = null;
 let isPlaying = false, isRepeat = false, isWordRepeat = false, isSongRepeat = false;
@@ -60,7 +60,7 @@ function fmt(s) {
   return`${String(m).padStart(2,'0')}:${String(sc).padStart(2,'0')}.${String(ms).padStart(3,'0')}`;
 }
 
-// â”€â”€ History â”€â”€
+// History
 function pushHistory() {
   const snap = {
     lines: JSON.parse(JSON.stringify(lines)),
@@ -171,7 +171,7 @@ function loadSession() {
     }
 }
 
-// â”€â”€ Modal History (Local to Edit Modal) â”€â”€
+// Modal History (Local to Edit Modal)
 let modalHistory = [];
 let modalHistIdx = -1;
 
@@ -249,7 +249,7 @@ function updateFileUI() {
     }
 }
 
-// â”€â”€ Render â”€â”€
+// Render
 function renderTimeline() {
   normalizeLines(lines);
   const oldScroll = container.scrollTop;
@@ -450,7 +450,7 @@ function posWord(el, w, line) {
   if(d) d.textContent = ((w.endMs - w.startMs) / 1000).toFixed(3) + 's';
 }
 
-// â”€â”€ Drag Logic â”€â”€
+// Drag Logic
 function bindDrag(el, word, line, tc, isPl = false) {
   const lh=el.querySelector('.resize-handle.left'), rh=el.querySelector('.resize-handle.right');
   let mode=null, sx=0, snap={}, hasDragged=false;
@@ -545,7 +545,7 @@ function bindDrag(el, word, line, tc, isPl = false) {
   });
 }
 
-// â”€â”€ Playback â”€â”€
+// Playback
 function togglePlay(){
   if(audio.src){audio.paused?audio.play():audio.pause();}
   else{isPlaying=!isPlaying;playBtn.innerHTML=isPlaying?'<i class="fas fa-pause"></i>':'<i class="fas fa-play"></i>';if(isPlaying){startTick();centerActiveLine();}else cancelAnimationFrame(rafId);}
@@ -605,7 +605,7 @@ function seekMs(ms){
   updateDisplay();
 }
 
-// â”€â”€ Display Update â”€â”€
+// Display Update
 function updateDisplay(){
   const cs=currentTime/1000, ds=duration/1000;
   timeDisp.textContent=`${fmt(cs)} / ${fmt(ds)}`;
@@ -667,7 +667,7 @@ function updateDisplay(){
   });
 }
 
-// â”€â”€ Audio Events â”€â”€
+// Audio Events
 audio.addEventListener('timeupdate',()=>{currentTime=audio.currentTime*1000;updateDisplay();});
 audio.addEventListener('play',()=>{isPlaying=true;playBtn.innerHTML='<i class="fas fa-pause"></i>';startAudioTick();centerActiveLine();});
 audio.addEventListener('pause',()=>{isPlaying=false;playBtn.innerHTML='<i class="fas fa-play"></i>';cancelAnimationFrame(rafId);});
@@ -770,8 +770,133 @@ $('btn-repeat-song').onclick=toggleRepeatSong;
 // Progress bar seek
 $('progress-bar').onclick=e=>{if(!duration)return;const r=$('progress-bar').getBoundingClientRect();seekMs(Math.max(0,(e.clientX-r.left)/r.width*duration));};
 
-// â”€â”€ File Loading â”€â”€
+// File Loading
 $('btn-load-audio').onclick=()=>$('input-audio').click();
+
+// Direct AIFF-to-WAV converter: parses the AIFF binary format manually
+// and re-encodes as a WAV blob. No browser audio API needed.
+function convertAiffToWav(arrayBuffer) {
+  const dv = new DataView(arrayBuffer);
+  const textDec = (offset, len) => {
+    let s = '';
+    for (let i = 0; i < len; i++) s += String.fromCharCode(dv.getUint8(offset + i));
+    return s;
+  };
+
+  // Validate FORM header
+  if (textDec(0, 4) !== 'FORM') throw new Error('Not a valid AIFF file (missing FORM header)');
+  const formType = textDec(8, 4);
+  if (formType !== 'AIFF' && formType !== 'AIFC') throw new Error('Not a valid AIFF file (expected AIFF or AIFC, got ' + formType + ')');
+
+  let numChannels = 0, numFrames = 0, bitsPerSample = 0, sampleRate = 0;
+  let ssndOffset = -1, ssndSize = 0, ssndDataOffset = 0;
+
+  // Parse chunks
+  let pos = 12;
+  while (pos < arrayBuffer.byteLength - 8) {
+    const chunkId = textDec(pos, 4);
+    const chunkSize = dv.getUint32(pos + 4, false); // big-endian
+    const chunkDataStart = pos + 8;
+
+    if (chunkId === 'COMM') {
+      numChannels = dv.getInt16(chunkDataStart, false);
+      numFrames = dv.getUint32(chunkDataStart + 2, false);
+      bitsPerSample = dv.getInt16(chunkDataStart + 6, false);
+      // Sample rate is an 80-bit IEEE 754 extended float
+      sampleRate = parseIeee754Extended(dv, chunkDataStart + 8);
+    } else if (chunkId === 'SSND') {
+      ssndDataOffset = dv.getUint32(chunkDataStart, false); // offset within SSND data
+      // blockSize = dv.getUint32(chunkDataStart + 4, false); // not needed
+      ssndOffset = chunkDataStart + 8 + ssndDataOffset;
+      ssndSize = chunkSize - 8 - ssndDataOffset;
+    }
+
+    // Advance to next chunk (chunks are word-aligned)
+    pos = chunkDataStart + chunkSize;
+    if (chunkSize % 2 !== 0) pos++;
+  }
+
+  if (!numChannels || !sampleRate || ssndOffset < 0) {
+    throw new Error('AIFF file is missing required COMM or SSND chunks');
+  }
+
+  // Build WAV output (always 16-bit PCM for broad compatibility)
+  const outBitsPerSample = 16;
+  const bytesPerOutSample = outBitsPerSample / 8;
+  const totalSamples = numFrames * numChannels;
+  const wavDataSize = totalSamples * bytesPerOutSample;
+  const wavBuf = new ArrayBuffer(44 + wavDataSize);
+  const wv = new DataView(wavBuf);
+
+  const writeStr = (off, str) => { for (let i = 0; i < str.length; i++) wv.setUint8(off + i, str.charCodeAt(i)); };
+
+  // RIFF header
+  writeStr(0, 'RIFF');
+  wv.setUint32(4, 36 + wavDataSize, true);
+  writeStr(8, 'WAVE');
+  // fmt
+  writeStr(12, 'fmt ');
+  wv.setUint32(16, 16, true);
+  wv.setUint16(20, 1, true); // PCM
+  wv.setUint16(22, numChannels, true);
+  wv.setUint32(24, sampleRate, true);
+  wv.setUint32(28, sampleRate * numChannels * bytesPerOutSample, true);
+  wv.setUint16(32, numChannels * bytesPerOutSample, true);
+  wv.setUint16(34, outBitsPerSample, true);
+  // data
+  writeStr(36, 'data');
+  wv.setUint32(40, wavDataSize, true);
+
+  // Convert samples: AIFF is big-endian, WAV is little-endian
+  const srcBytesPerSample = bitsPerSample / 8;
+  let writePos = 44;
+
+  for (let i = 0; i < totalSamples; i++) {
+    const srcPos = ssndOffset + i * srcBytesPerSample;
+    let sample;
+
+    if (bitsPerSample === 16) {
+      sample = dv.getInt16(srcPos, false); // big-endian
+    } else if (bitsPerSample === 24) {
+      // Read 24-bit big-endian, convert to 16-bit
+      const b0 = dv.getUint8(srcPos);
+      const b1 = dv.getUint8(srcPos + 1);
+      const b2 = dv.getUint8(srcPos + 2);
+      let val = (b0 << 16) | (b1 << 8) | b2;
+      if (val & 0x800000) val |= ~0xFFFFFF; // sign extend
+      sample = val >> 8; // truncate to 16-bit
+    } else if (bitsPerSample === 32) {
+      // Read 32-bit big-endian, convert to 16-bit
+      sample = dv.getInt32(srcPos, false) >> 16;
+    } else if (bitsPerSample === 8) {
+      // 8-bit AIFF is signed, scale to 16-bit
+      sample = dv.getInt8(srcPos) << 8;
+    } else {
+      throw new Error('Unsupported AIFF bit depth: ' + bitsPerSample);
+    }
+
+    wv.setInt16(writePos, sample, true); // little-endian
+    writePos += 2;
+  }
+
+  return new Blob([wavBuf], { type: 'audio/wav' });
+}
+
+// Parse 80-bit IEEE 754 extended precision float (used for AIFF sample rate)
+function parseIeee754Extended(dv, offset) {
+  const exponent = ((dv.getUint8(offset) & 0x7F) << 8) | dv.getUint8(offset + 1);
+  const sign = dv.getUint8(offset) & 0x80 ? -1 : 1;
+  let mantissa = 0;
+  for (let i = 0; i < 8; i++) {
+    mantissa = mantissa * 256 + dv.getUint8(offset + 2 + i);
+  }
+  if (exponent === 0 && mantissa === 0) return 0;
+  if (exponent === 0x7FFF) return sign * Infinity;
+  const f = sign * Math.pow(2, exponent - 16383 - 63) * mantissa;
+  return Math.round(f);
+}
+
+
 function handleAudioFile(f, isRestore = false) {
   if(f){
     lastAudioFile = f;
@@ -793,21 +918,47 @@ function handleAudioFile(f, isRestore = false) {
     if(audio.src) URL.revokeObjectURL(audio.src);
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const arrayBuffer = event.target.result;
       // Clear cache and buffer immediately
       waveformCache.clear();
       audioBuffer = null;
 
-      // Create a fresh Blob from the array buffer - this fixes demuxer and sound issues
-      const blob = new Blob([arrayBuffer], { type: f.type || 'audio/mpeg' });
-      const url = URL.createObjectURL(blob);
-      audio.src = url;
-      audio.load(); 
-      updateFileUI();
-      
-      // Decode audio for waveform
-      decodeAudioForWaveform(arrayBuffer);
+      const ext = f.name.split('.').pop().toLowerCase();
+      const isAiff = (ext === 'aif' || ext === 'aiff');
+
+      if (isAiff) {
+        // AIFF is not natively playable/decodable in most browsers.
+        // We parse the binary format directly and convert to WAV.
+        try {
+          const wavBlob = convertAiffToWav(arrayBuffer);
+          const url = URL.createObjectURL(wavBlob);
+          audio.src = url;
+          audio.load();
+          updateFileUI();
+
+          // Decode the converted WAV for waveform display
+          const wavBuffer = await wavBlob.arrayBuffer();
+          decodeAudioForWaveform(wavBuffer);
+        } catch (e) {
+          console.error("AIFF convert failed:", e);
+          alert("Failed to convert AIFF file: " + e.message + "\n\nPlease convert the audio to MP3 or WAV.");
+          stopPlay();
+          audioFilename = "";
+          audioFullname = "";
+          updateFileUI();
+        }
+      } else {
+        // Standard path for natively supported formats
+        const blob = new Blob([arrayBuffer], { type: f.type || 'audio/mpeg' });
+        const url = URL.createObjectURL(blob);
+        audio.src = url;
+        audio.load();
+        updateFileUI();
+
+        // Decode audio for waveform
+        decodeAudioForWaveform(arrayBuffer);
+      }
     };
     reader.onerror = () => console.error("Error reading audio file");
     reader.readAsArrayBuffer(f);
@@ -1029,7 +1180,7 @@ $('input-lyrics').onchange=e=>{
   e.target.value = "";
 };
 
-// â”€â”€ Dropdown Menus â”€â”€
+// Dropdown Menus
 function setupDropdown(btnId, menuId){
   const btn=$(btnId), menu=$(menuId);
   btn.onclick=e=>{e.stopPropagation();document.querySelectorAll('.dropdown-menu.open').forEach(m=>{if(m!==menu)m.classList.remove('open');});menu.classList.toggle('open');};
@@ -1038,7 +1189,7 @@ setupDropdown('btn-tools','tools-menu');
 setupDropdown('btn-export','export-menu');
 document.addEventListener('click',()=>document.querySelectorAll('.dropdown-menu.open').forEach(m=>m.classList.remove('open')));
 
-// â”€â”€ Export â”€â”€
+// Export
 function performExport(f, isQuick = false) {
   if(!f || !lines.length) return;
   
@@ -1081,12 +1232,12 @@ $('export-menu').onclick=e=>{
   $('export-menu').classList.remove('open');
 };
 
-// ── Tools ──
+// Tools
 $('tool-shift-time').onclick=()=>{$('tools-menu').classList.remove('open');$('shift-modal').style.display='flex';$('shift-amount').value=0;$('shift-amount').focus();};
 $('tool-find-replace').onclick=()=>{$('tools-menu').classList.remove('open');$('find-replace-modal').style.display='flex';$('find-text').focus();};
 $('tool-sort-rows').onclick=()=>{lines.sort((a,b)=>a.startMs-b.startMs);pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
 $('tool-remove-empty-lines').onclick=()=>{lines=lines.filter(l=>(l.words&&l.words.length>0)||l.text.trim());pushHistory();renderTimeline();$('tools-menu').classList.remove('open');};
-// --- Gap Filling Logic ---
+// Gap Filling Logic
 function fillGapToStart() {
   if (lines.length === 0) return false;
   lines.sort((a,b) => a.startMs - b.startMs);
@@ -2392,7 +2543,7 @@ $('tool-compact-ws').onclick=()=>{
   pushHistory();renderTimeline();$('tools-menu').classList.remove('open');
 };
 
-// â”€â”€ Hot Fix (one-click combo) â”€â”€
+// Hot Fix (one-click combo)
 function performHotFix() {
   waveformCache.clear();
   
@@ -2509,7 +2660,7 @@ $('tool-hotfix').onclick = () => { performHotFix(); $('tools-menu').classList.re
   
 
 
-// â”€â”€ Shift Time Modal â”€â”€
+// Shift Time Modal
 $('shift-minus-500').onclick=()=>$('shift-amount').value=parseInt($('shift-amount').value||0)-500;
 $('shift-minus-100').onclick=()=>$('shift-amount').value=parseInt($('shift-amount').value||0)-100;
 $('shift-plus-100').onclick=()=>$('shift-amount').value=parseInt($('shift-amount').value||0)+100;
@@ -2524,7 +2675,7 @@ const ms=parseInt($('shift-amount').value)||0;
   pushHistory();renderTimeline();$('shift-modal').style.display='none';
 };
 
-// â”€â”€ Selection Logic â”€â”€
+// Selection Logic
 $('check-all-lines').onclick = (e) => {
     const cbs = document.querySelectorAll('.line-checkbox');
     const checkedCount = document.querySelectorAll('.line-checkbox:checked').length;
@@ -2558,7 +2709,7 @@ function updateSelectionCount() {
     }
 }
 
-// â”€â”€ Find & Replace Modal â”€â”€
+// Find & Replace Modal
 $('fr-cancel').onclick=()=>$('find-replace-modal').style.display='none';
 $('fr-apply').onclick=()=>{
   const f=$('find-text').value, r=$('replace-text').value;
@@ -2570,7 +2721,7 @@ $('fr-apply').onclick=()=>{
   pushHistory();renderTimeline();$('find-replace-modal').style.display='none';
 };
 
-// â”€â”€ Edit Text Modal â”€â”€
+// Edit Text Modal
 $('et-cancel').onclick = () => $('edit-text-modal').style.display = 'none';
 
 function updateEditHighlighter() {
@@ -3080,11 +3231,11 @@ $('et-apply').onclick = () => {
   editingLine = null;
 };
 
-// â”€â”€ Undo/Redo Buttons â”€â”€
+// Undo/Redo Buttons
 $('btn-undo').onclick=undo;
 $('btn-redo').onclick=redo;
 
-// â”€â”€ View Mode Toggle â”€â”€
+// View Mode Toggle
 function setViewMode(mode) {
     const container = document.querySelector('.editor-container');
     if (mode === 'compact') {
@@ -3101,7 +3252,7 @@ function setViewMode(mode) {
 $('view-one-line').onclick = () => setViewMode('default');
 $('view-compact').onclick = () => setViewMode('compact');
 
-// â”€â”€ Highlight Toggle â”€â”€
+// Highlight Toggle
 $('btn-toggle-waveform').onclick = () => {
     isWaveformEnabled = !isWaveformEnabled;
     const btn = $('btn-toggle-waveform');
@@ -3117,7 +3268,7 @@ $('btn-toggle-highlight').onclick = () => {
     updateDisplay();
 };
 
-// â”€â”€ Prev/Next Line â”€â”€
+// Prev/Next Line
 function centerActiveLine() {
     const active = document.querySelector('.timeline-track.active');
     if (active) {
@@ -3147,7 +3298,7 @@ function jumpLines(delta) {
     setTimeout(centerActiveLine, 50);
 }
 
-// â”€â”€ Keyboard Shortcuts â”€â”€
+// Keyboard Shortcuts
 window.addEventListener('keydown', e => {
   const isMod = e.ctrlKey || e.metaKey;
 
@@ -3285,7 +3436,7 @@ function nudgeTime(ms) {
     renderTimeline();
 }
 
-// ── Search ──
+// Search
 $('search-input').oninput=e=>{
   const q=e.target.value.toLowerCase();
   $('search-clear').style.display = q ? 'block' : 'none';
@@ -3312,7 +3463,7 @@ $('search-clear').onclick = () => {
     $('search-input').focus();
 };
 
-// ── Fullscreen ──
+// Fullscreen
 $('btn-fullscreen').onclick = () => {
     if (!document.fullscreenElement) {
         document.documentElement.requestFullscreen().catch(err => {
@@ -3325,7 +3476,7 @@ $('btn-fullscreen').onclick = () => {
     }
 };
 
-// â”€â”€ Shortcuts Modal â”€â”€
+// Shortcuts Modal
 $('btn-shortcuts').onclick = () => $('shortcuts-modal').style.display = 'flex';
 $('shortcuts-close').onclick = () => $('shortcuts-modal').style.display = 'none';
 $('shortcuts-close-top').onclick = () => $('shortcuts-modal').style.display = 'none';
@@ -3403,7 +3554,7 @@ $('btn-delete-selected').onclick = () => {
     }
 };
 
-// ── Jump to Line ──
+// Jump to Line
 $('jl-cancel').onclick = () => $('jump-line-modal').style.display = 'none';
 $('jl-dec').onclick = () => {
     const input = $('jump-line-input');
@@ -3438,7 +3589,7 @@ window.addEventListener('click', (e) => {
     if (e.target === $('jump-word-modal')) $('jump-word-modal').style.display = 'none';
 });
 
-// ── Jump to Word ──
+// Jump to Word
 $('jw-cancel').onclick = () => $('jump-word-modal').style.display = 'none';
 $('jw-dec').onclick = () => {
     const input = $('jump-word-input');
@@ -3490,7 +3641,7 @@ document.addEventListener('fullscreenchange', () => {
     }
 });
 
-// â”€â”€ Drag & Drop â”€â”€
+// Drag & Drop
 document.addEventListener('dragover', e => {
     e.preventDefault();
     if (!lines.length) container.classList.add('drag-over');
@@ -3507,7 +3658,7 @@ document.addEventListener('drop', e => {
     let audioToLoad = null, audioCount = 0;
     let lyricsToLoad = null, lyricsCount = 0;
 
-    const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'webm', 'mp4'];
+    const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'webm', 'mp4', 'aif', 'aiff'];
     const lyricsExts = ['lrc', 'srt', 'vtt', 'txt', 'json', 'xml', 'ttml', 'lyricsfile', 'srv1', 'srv2', 'srv3'];
 
     for (const f of files) {
@@ -3541,7 +3692,7 @@ document.addEventListener('drop', e => {
     }
 });
 
-// â”€â”€ Init â”€â”€
+// Init
 (async function init() {
     loadSession(); // Load text/metadata (very fast)
     updateFileUI();
