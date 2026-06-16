@@ -144,6 +144,17 @@ These advanced tools are designed to fix one of the most common issues in lyric 
 
 ## 🌟 What's New
 
+### v0.0.7
+
+- **In-Browser AIFF Audio Support**: Adds full client-side decoding and conversion of AIFF (`.aif`, `.aiff`) audio files.
+  - Custom binary parser manually extracts AIFF `FORM`, `COMM`, and `SSND` chunks.
+  - Supports converting 8-bit, 16-bit, 24-bit, and 32-bit big-endian PCM samples into standard 16-bit little-endian WAV format on the fly.
+  - Decodes 80-bit IEEE 754 extended precision float structures for accurate sample rate conversion.
+  - Enables natively unsupported AIFF files to play seamlessly and render precise waveforms.
+- **Improved Media Accessibility**: Integrated `.aif` and `.aiff` file formats into the standard audio file inputs and drag-and-drop workspace detectors.
+- **Responsive Layout Optimization**: Configured `#btn-hotfix` to hide its text label and transition to icon-only mode on medium screens (under `1280px`), maximizing toolbar layout efficiency.
+- **Clean Source Formatting**: Replaced corrupted separator characters (`â”€â”€`) in code comments with clean, standardized comment formatting for improved code readability.
+
 ### v0.0.6
 
 - **Full Undo/Redo Session Persistence**: The entire multi-step undo/redo history stack (`history`) and current pointer index (`histIdx`) are now securely serialized and persisted in `localStorage` alongside your session. Refreshing (F5) or reloading the page no longer wipes out your undo/redo history, letting you step back and forth through your changes seamlessly!
