@@ -296,9 +296,37 @@ function renderTimeline() {
     tw += line.words.length;
     const ld = Math.max(0.05, (line.endMs - line.startMs)/1000);
     const tr = document.createElement('div');
-    tr.className='timeline-track'; tr.id=`tc-${line.id}`;
+    const hasBgWords = line.words && line.words.some(w => w.isBackground || w.role === 'x-bg');
+    // Check if any words overlap in timing
+    function checkOverlap(words) {
+      if (!words || words.length <= 1) return false;
+      const sorted = [...words].sort((a,b) => a.startMs - b.startMs);
+      for (let i = 0; i < sorted.length - 1; i++) {
+        if (sorted[i+1].startMs < sorted[i].endMs - 1) return true;
+      }
+      return false;
+    }
+    const hasOverlaps = hasBgWords && checkOverlap(line.words);
+    const isBgLine = line.isBackground || line.role === 'x-bg' || hasBgWords;
+    tr.className = 'timeline-track' + (isBgLine ? ' bg-line' : '') + (hasOverlaps ? ' has-overlapping-words' : '') + (line.agent ? ` agent-${line.agent}` : '');
+    tr.id = `tc-${line.id}`;
     const isChecked = previouslySelected.has(line.id);
-    tr.innerHTML=`<div class="track-controls"><input type="checkbox" class="line-checkbox" data-id="${line.id}" ${isChecked ? 'checked' : ''} style="cursor:pointer; margin-right:4px;" title="Select this line"><span style="color:var(--text-muted);font-size:11px;width:14px">${idx+1}</span><button class="track-play-btn" data-start="${line.startMs}" data-end="${line.endMs}"><i class="fas fa-play" style="font-size:9px;margin-left:1px"></i></button><div class="track-info">${fmt(line.startMs/1000)}</div></div><div class="track-content" id="trk-${line.id}"><div class="playback-indicator" id="pi-${line.id}"></div></div><div class="track-end-time">${fmt(line.endMs/1000)}</div><button class="icon-btn track-edit-btn" title="Edit Line Text"><i class="fas fa-edit"></i></button><button class="icon-btn track-delete-btn" title="Delete Line"><i class="fas fa-trash"></i></button>`;
+    let badgesHtml = '';
+    if (line.agent || line.songPart) {
+      badgesHtml += `<div class="track-badges" style="margin-top:3px; display:flex; gap:3px; flex-wrap:wrap; width:100%;">`;
+      if (line.agent) {
+        badgesHtml += `<span class="agent-badge badge-${line.agent}" style="margin-left:0;" title="Vocal Agent: ${line.agent}">${line.agent}</span>`;
+      }
+      if (line.songPart) {
+        badgesHtml += `<span class="part-badge" style="margin-left:0;" title="Song Part: ${line.songPart}">${line.songPart}</span>`;
+      }
+      badgesHtml += `</div>`;
+    }
+    let rightBadgeHtml = '';
+    if (isBgLine) {
+      rightBadgeHtml = `<div class="bg-indicator-badge" title="Contains Background Vocals" style="margin-top:3px; font-size:9px; font-weight:700; padding:1px 3px; border-radius:3px; background:rgba(138, 96, 255, 0.15); color:#8a60ff; text-transform:uppercase; border:1px solid rgba(138, 96, 255, 0.35); text-align:center; max-width:fit-content; line-height:1;">BG</div>`;
+    }
+    tr.innerHTML=`<div class="track-controls"><input type="checkbox" class="line-checkbox" data-id="${line.id}" ${isChecked ? 'checked' : ''} style="cursor:pointer; margin-right:4px;" title="Select this line"><span style="color:var(--text-muted);font-size:11px;width:14px">${idx+1}</span><button class="track-play-btn" data-start="${line.startMs}" data-end="${line.endMs}"><i class="fas fa-play" style="font-size:9px;margin-left:1px"></i></button><div class="track-info" style="display:flex; flex-direction:column; align-items:flex-start; line-height:1.2;"><div>${fmt(line.startMs/1000)}</div>${badgesHtml}</div></div><div class="track-content" id="trk-${line.id}"><div class="playback-indicator" id="pi-${line.id}"></div></div><div class="track-end-time" style="display:flex; flex-direction:column; align-items:flex-start; line-height:1.2; justify-content:flex-start; min-width:48px;"><div>${fmt(line.endMs/1000)}</div>${rightBadgeHtml}</div><button class="icon-btn track-tag-btn" title="Edit Line Attributes"><i class="fas fa-tag"></i></button><button class="icon-btn track-edit-btn" title="Edit Line Text"><i class="fas fa-edit"></i></button><button class="icon-btn track-delete-btn" title="Delete Line"><i class="fas fa-trash"></i></button>`;
     
     // Observer for lazy-loading waveforms
     const tc = tr.querySelector('.track-content');
@@ -306,7 +334,10 @@ function renderTimeline() {
 
     const ws = (line.words && line.words.length > 0) ? line.words : [{ id: `pl-${line.id}`, text: (line.text || "").trim() || "[Empty]", startMs: line.startMs, endMs: line.endMs, isPl: true }];
     ws.forEach(w => {
-      const el = document.createElement('div'); el.className='word-block'; el.id=`w-${w.id}`;
+      const el = document.createElement('div');
+      const isBgWord = w.isBackground || w.role === 'x-bg';
+      el.className = 'word-block' + (isBgWord ? ' bg-word' : '');
+      el.id = `w-${w.id}`;
       if(w.isPl) el.style.opacity = '0.7';
       const wText = (w.text || "").trim();
       const isActuallyBlank = !wText || wText === "\\" || wText === "[Empty]";
@@ -329,6 +360,7 @@ function renderTimeline() {
       }
     };
     tr.querySelector('.track-delete-btn').onclick = () => { lines=lines.filter(l=>l.id!==line.id); pushHistory(); renderTimeline(); };
+    tr.querySelector('.track-tag-btn').onclick = () => { openLineAttrModal(line); };
     tr.querySelector('.track-edit-btn').onclick = () => {
       editingLine = line;
       // Show \ for blank words so users can preserve them
@@ -469,9 +501,9 @@ function bindDrag(el, word, line, tc, isPl = false) {
       ns:i<line.words.length-1?line.words[i+1].startMs:null, ne:i<line.words.length-1?line.words[i+1].endMs:null};
   }
 
-  lh.onpointerdown=e=>{mode='rl';sx=e.clientX;hasDragged=false;capture();e.stopPropagation();el.setPointerCapture(e.pointerId);};
-  rh.onpointerdown=e=>{mode='rr';sx=e.clientX;hasDragged=false;capture();e.stopPropagation();el.setPointerCapture(e.pointerId);};
-  el.onpointerdown=e=>{if(e.target.classList.contains('resize-handle'))return;mode='drag';sx=e.clientX;hasDragged=false;capture();el.classList.add('dragging');el.setPointerCapture(e.pointerId);};
+  lh.onpointerdown=e=>{mode='rl';sx=e.clientX;hasDragged=false;capture();e.stopPropagation();el.setPointerCapture(e.pointerId); const tr=el.closest('.timeline-track'); if(tr)tr.classList.add('is-dragging');};
+  rh.onpointerdown=e=>{mode='rr';sx=e.clientX;hasDragged=false;capture();e.stopPropagation();el.setPointerCapture(e.pointerId); const tr=el.closest('.timeline-track'); if(tr)tr.classList.add('is-dragging');};
+  el.onpointerdown=e=>{if(e.target.classList.contains('resize-handle'))return;mode='drag';sx=e.clientX;hasDragged=false;capture();el.classList.add('dragging');el.setPointerCapture(e.pointerId); const tr=el.closest('.timeline-track'); if(tr)tr.classList.add('is-dragging');};
 
   document.addEventListener('pointermove', e=>{
     if(!mode)return;
@@ -534,6 +566,8 @@ function bindDrag(el, word, line, tc, isPl = false) {
   document.addEventListener('pointerup', ()=>{
     if(mode){
       el.classList.remove('dragging');
+      const tr = el.closest('.timeline-track');
+      if (tr) tr.classList.remove('is-dragging');
       if(hasDragged){
         pushHistory();
       }else{
@@ -1099,6 +1133,17 @@ function processImportedContent(content, fmt, fileObj = null) {
 
     lines=parseContent(content,fmt);
     const meta = parseMetadata(content, fmt);
+    if (window.appMetadata) {
+        const fields = ['title', 'artist', 'album', 'language', 'author', 'by', 'lyricist', 'offset', 'copyright', 'itunesTiming', 'leadingSilence', 'agents', 'songwriters'];
+        fields.forEach(f => {
+            if (meta[f] !== undefined && meta[f] !== null && meta[f] !== '') {
+                window.appMetadata[f] = meta[f];
+            }
+        });
+        if (typeof window.saveAppMetadata === 'function') {
+            window.saveAppMetadata();
+        }
+    }
     autoFillWords(lines);
     normalizeLines(lines);
     let wid=1; lines.forEach(l=>{if(l.words)l.words.forEach(w=>w.id=wid++);});
@@ -1207,7 +1252,7 @@ function performExport(f, isQuick = false) {
   // Only use autoEmpty if it's a manual export and the toggle is checked.
   // For Quick Export, we want it to match exactly what's in the editor.
   const autoEmpty = isQuick ? false : ($('toggle-auto-empty-lines') ? $('toggle-auto-empty-lines').checked : false);
-  const ext={lrc:'lrc',lrc_enhanced:'lrc',srt:'srt',vtt:'vtt',vtt_karaoke:'vtt',ttml:'ttml',ttml_karaoke:'ttml',srv1:'srv1',srv2:'srv2',srv3:'srv3',srv3_karaoke:'srv3',json:'json',json3:'json',lyricsfile:'lyricsfile',txt:'txt',audacity:'txt',audacity_karaoke:'txt'}[targetFormat]||'txt';
+  const ext={lrc:'lrc',lrc_enhanced:'lrc',srt:'srt',vtt:'vtt',vtt_karaoke:'vtt',ttml:'ttml',ttml_karaoke:'ttml',apple_ttml:'ttml',apple_ttml_karaoke:'ttml',srv1:'srv1',srv2:'srv2',srv3:'srv3',srv3_karaoke:'srv3',json:'json',json3:'json',lyricsfile:'lyricsfile',txt:'txt',audacity:'txt',audacity_karaoke:'txt'}[targetFormat]||'txt';
   
   let finalBaseName = originalFilename;
   if (audioFilename && lyricsFilename && audioFilename !== lyricsFilename) {
@@ -1222,7 +1267,15 @@ function performExport(f, isQuick = false) {
   } else if (targetFormat === 'audacity_karaoke') {
       name = `${finalBaseName} - Audacity Label (Words).txt`;
   }
-  downloadFile(exportAs(lines.map(l=>({startMs:l.startMs,endMs:l.endMs,text:l.text,words:l.words})), targetFormat, duration, { autoEmptyLines: autoEmpty }), name);
+  downloadFile(exportAs(lines.map(l=>({
+    startMs: l.startMs,
+    endMs: l.endMs,
+    text: l.text,
+    words: l.words,
+    isBackground: !!(l.isBackground || l.role === 'x-bg'),
+    role: l.role || null,
+    agent: l.agent || null
+  })), targetFormat, duration, { autoEmptyLines: autoEmpty, metadata: window.appMetadata }), name);
 }
 
 $('export-menu').onclick=e=>{
@@ -1334,6 +1387,7 @@ $('tool-clear-session').onclick=()=>{
     if(confirm("Clear saved session and reset editor? This will refresh the page.")) {
         localStorage.removeItem('lyricseditor_session');
         localStorage.removeItem('lyricseditor_history');
+        localStorage.removeItem('lyricseditor_metadata');
         clearDB().then(() => location.reload());
     }
 };
@@ -2976,6 +3030,19 @@ $('et-apply').onclick = () => {
   if (editingLine) {
     // Fix tokenization: ensure \ and " are treated as separate tokens even if attached to words
     const newTokens = inputVal.replace(/([\\])/g, ' $1 ').split(/\s+/).filter(t => t);
+    
+    // Helper to determine background vocal state by token index in newTokens
+    function isBgToken(idx) {
+      let inParenthesis = false;
+      for (let i = 0; i <= idx; i++) {
+        const t = newTokens[i];
+        if (t.startsWith('(')) inParenthesis = true;
+        const wasBg = inParenthesis;
+        if (t.endsWith(')')) inParenthesis = false;
+        if (i === idx) return wasBg || !!editingLine.isBackground;
+      }
+      return !!editingLine.isBackground;
+    }
     const oldWords = (editingLine.words && editingLine.words.length > 0)
         ? editingLine.words
         : editingLine.text.trim().split(/\s+/).filter(t => t).map((t, i, arr) => {
@@ -2996,10 +3063,15 @@ $('et-apply').onclick = () => {
 
         if (keepStructure) {
             // ON: Sequential â€” slot N keeps its timestamp, text changes
-            resultWords = oldWords.map((w, i) => ({
-                ...w,
-                text: (newTokens[i] === '\\') ? "" : newTokens[i]
-            }));
+            resultWords = oldWords.map((w, i) => {
+                const isBg = isBgToken(i);
+                return {
+                    ...w,
+                    text: (newTokens[i] === '\\') ? "" : newTokens[i],
+                    isBackground: isBg,
+                    role: isBg ? 'x-bg' : null
+                };
+            });
         } else {
             // OFF (default): Smart â€” words carry their DURATION to new positions
             const usedOld = new Set();
@@ -3015,7 +3087,10 @@ $('et-apply').onclick = () => {
                     matched[i] = {
                         text: text,
                         duration: oldWords[matchIdx].endMs - oldWords[matchIdx].startMs,
-                        id: oldWords[matchIdx].id
+                        id: oldWords[matchIdx].id,
+                        isBackground: oldWords[matchIdx].isBackground,
+                        role: oldWords[matchIdx].role,
+                        agent: oldWords[matchIdx].agent
                     };
                     usedOld.add(matchIdx);
                 }
@@ -3031,11 +3106,21 @@ $('et-apply').onclick = () => {
                         matched[i] = {
                             text: text,
                             duration: remainingOld[remIdx].endMs - remainingOld[remIdx].startMs,
-                            id: remainingOld[remIdx].id
+                            id: remainingOld[remIdx].id,
+                            isBackground: remainingOld[remIdx].isBackground,
+                            role: remainingOld[remIdx].role,
+                            agent: remainingOld[remIdx].agent
                         };
                         remIdx++;
                     } else {
-                        matched[i] = { text: text, duration: 50, id: Date.now() + i };
+                        matched[i] = {
+                            text: text,
+                            duration: 50,
+                            id: Date.now() + i,
+                            isBackground: editingLine.isBackground,
+                            role: editingLine.role,
+                            agent: editingLine.agent
+                        };
                     }
                 }
             });
@@ -3053,7 +3138,10 @@ $('et-apply').onclick = () => {
                     id: m.id,
                     text: m.text,
                     startMs: Math.round(cursor),
-                    endMs: Math.round(cursor + dur)
+                    endMs: Math.round(cursor + dur),
+                    isBackground: m.isBackground,
+                    role: m.role,
+                    agent: m.agent
                 };
                 cursor = word.endMs;
                 return word;
@@ -3069,21 +3157,39 @@ $('et-apply').onclick = () => {
         return;
     }
 
-    // 2. Case: Keep Structure (Different word counts)
     if (keepStructure) {
         const resultWords = [];
         newTokens.forEach((t, i) => {
+            const isBg = isBgToken(i);
             const text = (t === '\\') ? "" : t;
             if (i < oldWords.length) {
-                resultWords.push({ ...oldWords[i], text: text });
+                resultWords.push({ 
+                    ...oldWords[i], 
+                    text: text,
+                    isBackground: isBg,
+                    role: isBg ? 'x-bg' : null
+                });
             } else {
                 const last = resultWords[resultWords.length - 1];
                 const start = last ? last.endMs : (oldWords.length ? oldWords[oldWords.length-1].endMs : editingLine.startMs);
-                resultWords.push({ id: Date.now() + i, text: text, startMs: start, endMs: Math.max(start + 100, editingLine.endMs) });
+                resultWords.push({ 
+                    id: Date.now() + i, 
+                    text: text, 
+                    startMs: start, 
+                    endMs: Math.max(start + 100, editingLine.endMs),
+                    isBackground: isBg,
+                    role: isBg ? 'x-bg' : null,
+                    agent: editingLine.agent
+                });
             }
         });
         for (let i = newTokens.length; i < oldWords.length; i++) {
-            resultWords.push({ ...oldWords[i], text: "" });
+            resultWords.push({ 
+                ...oldWords[i], 
+                text: "",
+                isBackground: oldWords[i].isBackground,
+                role: oldWords[i].role
+            });
         }
         editingLine.words = resultWords;
         editingLine.text = resultWords.map(w => w.text).join(' ').replace(/\s+/g, ' ').trim();
@@ -3154,11 +3260,16 @@ $('et-apply').onclick = () => {
                 const perW = dur / newInGap.length;
                 newInGap.forEach((t, idx) => {
                     const isBlank = (t === "\\");
+                    const tokenIdx = curr.newIdx + 1 + idx;
+                    const isBg = isBgToken(tokenIdx);
                     resultWords.push({
                         id: oldInGap[idx] ? oldInGap[idx].id : (Date.now() + Math.random()),
                         text: isBlank ? "" : t,
                         startMs: Math.round(spanStart + perW * idx),
-                        endMs: Math.round(spanStart + perW * (idx + 1))
+                        endMs: Math.round(spanStart + perW * (idx + 1)),
+                        isBackground: isBg,
+                        role: isBg ? 'x-bg' : null,
+                        agent: oldInGap[idx] ? oldInGap[idx].agent : editingLine.agent
                     });
                 });
             } else {
@@ -3201,11 +3312,16 @@ $('et-apply').onclick = () => {
                 const perW = available / newInGap.length;
                 newInGap.forEach((t, idx) => {
                     const isBlank = (t === "\\");
+                    const tokenIdx = curr.newIdx + 1 + idx;
+                    const isBg = isBgToken(tokenIdx);
                     resultWords.push({
                         id: Date.now() + Math.random(),
                         text: isBlank ? "" : t,
                         startMs: Math.round(insertStart + perW * idx),
-                        endMs: Math.round(insertStart + perW * (idx + 1))
+                        endMs: Math.round(insertStart + perW * (idx + 1)),
+                        isBackground: isBg,
+                        role: isBg ? 'x-bg' : null,
+                        agent: editingLine.agent
                     });
                 });
             }
@@ -3539,6 +3655,7 @@ $('btn-reset-session-header').onclick = () => {
     if(confirm("Clear saved session and reset editor? This will refresh the page.")) {
         localStorage.removeItem('lyricseditor_session');
         localStorage.removeItem('lyricseditor_history');
+        localStorage.removeItem('lyricseditor_metadata');
         clearDB().then(() => location.reload());
     }
 };
@@ -3922,3 +4039,100 @@ function drawWaveformForLine(container, line) {
     container.style.backgroundPosition = '0 0';
     return true;
 }
+
+// Global getters for Metadata Editor access
+window.getLastAudioFile = () => lastAudioFile;
+window.getLastLyricsFile = () => lastLyricsFile;
+
+// Line Attributes Modal Controller
+let attrEditingLine = null;
+
+function openLineAttrModal(line) {
+  attrEditingLine = line;
+  
+  const selectPart = $('line-attr-song-part');
+  const customWrapper = $('line-attr-custom-part-wrapper');
+  const customInput = $('line-attr-custom-part');
+  
+  const partVal = line.songPart || '';
+  const standardParts = ['Verse', 'Chorus', 'Bridge', 'Intro', 'Outro', 'Pre-Chorus', 'Hook', 'Solo'];
+  if (partVal === '') {
+    selectPart.value = '';
+    customWrapper.style.display = 'none';
+  } else if (standardParts.includes(partVal)) {
+    selectPart.value = partVal;
+    customWrapper.style.display = 'none';
+  } else {
+    selectPart.value = 'custom';
+    customInput.value = partVal;
+    customWrapper.style.display = 'flex';
+  }
+  
+  const selectAgent = $('line-attr-agent');
+  selectAgent.innerHTML = '<option value="">None</option>';
+  const metaAgents = (window.appMetadata && window.appMetadata.agents) ? window.appMetadata.agents : [];
+  metaAgents.forEach(a => {
+    const opt = document.createElement('option');
+    opt.value = a.id;
+    opt.textContent = `${a.id} (${a.name || 'Vocalist'})`;
+    selectAgent.appendChild(opt);
+  });
+  selectAgent.value = line.agent || '';
+  
+  $('line-attr-bg').checked = !!(line.isBackground || line.role === 'x-bg');
+  
+  $('line-attr-modal').style.display = 'flex';
+}
+
+$('line-attr-song-part').onchange = (e) => {
+  $('line-attr-custom-part-wrapper').style.display = e.target.value === 'custom' ? 'flex' : 'none';
+};
+
+$('line-attr-cancel').onclick = () => {
+  $('line-attr-modal').style.display = 'none';
+};
+$('line-attr-close-top').onclick = () => {
+  $('line-attr-modal').style.display = 'none';
+};
+$('line-attr-modal').onclick = (e) => {
+  if (e.target.id === 'line-attr-modal') $('line-attr-modal').style.display = 'none';
+};
+
+$('line-attr-save').onclick = () => {
+  if (!attrEditingLine) return;
+  
+  const partSelect = $('line-attr-song-part').value;
+  const partValue = partSelect === 'custom' ? $('line-attr-custom-part').value.trim() : partSelect;
+  attrEditingLine.songPart = partValue;
+  
+  if ($('line-attr-apply-subsequent') && $('line-attr-apply-subsequent').checked) {
+    const idx = lines.findIndex(l => l.id === attrEditingLine.id);
+    if (idx !== -1) {
+      for (let j = idx + 1; j < lines.length; j++) {
+        // Stop if we hit a line with a different, non-empty song part
+        if (lines[j].songPart && lines[j].songPart !== partValue) {
+          break;
+        }
+        lines[j].songPart = partValue;
+      }
+    }
+  }
+  
+  attrEditingLine.agent = $('line-attr-agent').value || null;
+  
+  const isBg = $('line-attr-bg').checked;
+  attrEditingLine.isBackground = isBg;
+  attrEditingLine.role = isBg ? 'x-bg' : null;
+  
+  if (attrEditingLine.words) {
+    attrEditingLine.words.forEach(w => {
+      w.isBackground = isBg;
+      w.role = isBg ? 'x-bg' : null;
+      w.agent = attrEditingLine.agent;
+    });
+  }
+  
+  $('line-attr-modal').style.display = 'none';
+  pushHistory();
+  renderTimeline();
+};

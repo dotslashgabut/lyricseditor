@@ -8,6 +8,7 @@
     <meta name="description" content="Professional word-level lyrics and subtitle editor with intuitive drag-and-drop timeline. Sync LRC, SRT, VTT, TTML, and YouTube formats with high-precision timing.">
 
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="metadata-styles.css">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
@@ -34,6 +35,9 @@
             <div class="dropdown-wrapper">
                 <button class="btn tool-btn" id="btn-tools"><i class="fas fa-sliders-h"></i> <span>Tools</span></button>
                 <div class="dropdown-menu" id="tools-menu">
+                    <div class="dropdown-section-title">Metadata & Export</div>
+                    <div class="dropdown-item" id="tool-metadata-editor" style="color: var(--accent); font-weight: 600;"><i class="fas fa-tags"></i> Metadata Editor...</div>
+                    <div class="dropdown-divider"></div>
                     <div class="dropdown-section-title">Global Tools</div>
                     <div class="dropdown-item" id="tool-hotfix" style="color: var(--accent); font-weight: 600;"><i class="fas fa-bolt"></i> Hot Fix (Clean & Sync)</div>
                     <div class="dropdown-item" id="tool-shift-time"><i class="fas fa-clock"></i> Shift Time...</div>
@@ -122,11 +126,13 @@
                     <div class="dropdown-item" data-format="srt"><i class="fas fa-file-alt"></i> SRT</div>
                     <div class="dropdown-item" data-format="vtt"><i class="fas fa-file-alt"></i> VTT</div>
                     <div class="dropdown-item" data-format="ttml"><i class="fas fa-file-alt"></i> TTML</div>
+                    <div class="dropdown-item" data-format="apple_ttml"><i class="fab fa-apple"></i> Apple TTML (iTunes)</div>
                     <div class="dropdown-divider"></div>
                     <div class="dropdown-section-title">Karaoke (Word-Level)</div>
                     <div class="dropdown-item" data-format="lrc_enhanced"><i class="fas fa-microphone-alt"></i> Enhanced LRC</div>
                     <div class="dropdown-item" data-format="vtt_karaoke"><i class="fas fa-microphone-alt"></i> VTT (Words)</div>
                     <div class="dropdown-item" data-format="ttml_karaoke"><i class="fas fa-microphone-alt"></i> TTML (Words)</div>
+                    <div class="dropdown-item" data-format="apple_ttml_karaoke"><i class="fab fa-apple"></i> Apple TTML (Words)</div>
                     <div class="dropdown-item" data-format="srv3_karaoke"><i class="fas fa-microphone-alt"></i> YouTube SRV (Words)</div>
                     <div class="dropdown-item" data-format="audacity_karaoke"><i class="fas fa-microphone-alt"></i> Audacity Labels (Words)</div>
                     <div class="dropdown-divider"></div>
@@ -385,7 +391,7 @@
                 </div>
                 <div style="font-size:11px; color:var(--text-muted); margin-top:8px; display:flex; justify-content:space-between; align-items:center;">
                     <div>
-                        <i class="fas fa-info-circle"></i> Use <b>\</b> for blank words.
+                        <i class="fas fa-info-circle"></i> Use <b>\</b> for blank words. Use <b>( )</b> for background vocals.
                     </div>
                     <label style="display:flex; align-items:center; gap:6px; cursor:pointer; color:var(--text-main);" title="If checked, new words will be mapped directly to existing timestamp slots in order, ignoring text similarity.">
                         <input type="checkbox" id="edit-keep-structure" style="width:14px; height:14px; accent-color:var(--accent);"> Keep Word Timings
@@ -594,7 +600,170 @@
         </div>
     </div>
 
+    <!-- Metadata Editor Modal -->
+    <div class="modal-overlay" id="metadata-modal" style="display:none">
+        <div class="modal-box" style="max-width:640px; width:92vw; max-height:88vh; overflow-y:auto;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <h3 style="margin:0; display:flex; align-items:center; gap:10px;"><i class="fas fa-tags" style="color:var(--accent);"></i> Metadata Editor</h3>
+                <button class="icon-btn" id="metadata-close-top"><i class="fas fa-times"></i></button>
+            </div>
+            <p style="color:var(--text-muted); font-size:12.5px; margin-bottom:16px; line-height:1.5;">
+                Metadata will be automatically included in exported files based on format support.<br>
+                <span style="font-size:11px; opacity:0.8;">LRC = [ti/ar/al/by] • TTML = &lt;ttm:title&gt; • Apple TTML = iTunesMetadata, agents, songwriters • VTT/SRT = NOTE header • JSON = metadata block</span>
+            </p>
+            <div class="metadata-tabs" style="display:flex; gap:6px; margin-bottom:18px; border-bottom:1px solid var(--border); padding-bottom:10px; flex-wrap:wrap;">
+                <button class="btn toggle-btn active" data-tab="common" id="meta-tab-common"><i class="fas fa-info-circle"></i> Common</button>
+                <button class="btn toggle-btn" data-tab="lrc" id="meta-tab-lrc"><i class="fas fa-file-alt"></i> LRC</button>
+                <button class="btn toggle-btn" data-tab="ttml" id="meta-tab-ttml"><i class="fab fa-apple"></i> TTML / Apple</button>
+            </div>
+            <div id="metadata-tab-common">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                    <div style="display:flex; flex-direction:column; gap:6px;">
+                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Title [ti] / &lt;ttm:title&gt;</label>
+                        <input type="text" id="meta-title" placeholder="Song Title" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:6px;">
+                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Artist [ar]</label>
+                        <input type="text" id="meta-artist" placeholder="Artist Name" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:6px;">
+                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Album [al]</label>
+                        <input type="text" id="meta-album" placeholder="Album Name" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:6px;">
+                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Language [la] / xml:lang</label>
+                        <input type="text" id="meta-language" placeholder="en, id, ja..." style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:6px;">
+                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Created By [by]</label>
+                        <input type="text" id="meta-by" placeholder="Editor / LRC Creator" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:6px;">
+                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Lyricist / Author [au]</label>
+                        <input type="text" id="meta-author" placeholder="Lyricist Name" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
+                    </div>
+                    <div style="grid-column:1 / -1; display:flex; flex-direction:column; gap:6px;">
+                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Copyright / Comment</label>
+                        <input type="text" id="meta-copyright" placeholder="© 2026 Label" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
+                    </div>
+                </div>
+            </div>
+            <div id="metadata-tab-lrc" style="display:none">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                    <div style="display:flex; flex-direction:column; gap:6px;">
+                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Offset [offset] (ms)</label>
+                        <input type="number" id="meta-offset" value="0" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:6px;">
+                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Lyricist [au] override</label>
+                        <input type="text" id="meta-lyricist" placeholder="Same as Author" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
+                    </div>
+                </div>
+            </div>
+            <div id="metadata-tab-ttml" style="display:none">
+                <div style="display:flex; flex-direction:column; gap:14px;">
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                        <div style="display:flex; flex-direction:column; gap:6px;">
+                            <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">iTunes Timing Mode</label>
+                            <select id="meta-itunes-timing" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
+                                <option value="Word">Word (default Apple)</option>
+                                <option value="Line">Line</option>
+                                <option value="Word-Exact">Word-Exact</option>
+                                <option value="None">None</option>
+                            </select>
+                        </div>
+                        <div style="display:flex; flex-direction:column; gap:6px;">
+                            <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Leading Silence (ms)</label>
+                            <input type="number" id="meta-leading-silence" value="0" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
+                        </div>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:6px;">
+                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Agents - one per line: id|name</label>
+                        <textarea id="meta-agents" placeholder="v1|Lead Vocal&#10;v2|Backing Vocal" style="min-height:72px; padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px; font-family:monospace;"></textarea>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:6px;">
+                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Songwriters - one per line</label>
+                        <textarea id="meta-songwriters" placeholder="John Doe&#10;Jane Smith" style="min-height:72px; padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;"></textarea>
+                    </div>
+                    <div style="display:flex; gap:12px; align-items:center; background:var(--bg-dark); border:1px solid var(--border); border-radius:8px; padding:10px 12px;">
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12px;">
+                            <input type="checkbox" id="meta-enable-bg" checked style="accent-color:var(--accent);"> Export background vocals as ttm:role="x-bg"
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div style="display:flex; gap:8px; justify-content:space-between; margin-top:22px; border-top:1px solid var(--border); padding-top:16px; flex-wrap:wrap;">
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <button class="btn" id="metadata-clear" style="color:#ff4d4f;" title="Clear all metadata"><i class="fas fa-trash"></i> Clear</button>
+                    <button class="btn" id="metadata-extract-audio" style="color:var(--accent);" title="Load/Extract metadata from loaded audio file"><i class="fas fa-file-audio"></i> Extract Audio</button>
+                    <button class="btn" id="metadata-extract-lyrics" style="color:var(--accent);" title="Load/Extract metadata from loaded lyrics file"><i class="fas fa-file-alt"></i> Extract Lyrics</button>
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <button class="btn" id="metadata-cancel">Cancel</button>
+                    <button class="btn btn-primary" id="metadata-save"><i class="fas fa-save"></i> Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Line Attributes Modal (Song Part & Agent) -->
+    <div class="modal-overlay" id="line-attr-modal" style="display:none">
+        <div class="modal-box" style="max-width:400px; width:90vw;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <h3 style="margin:0; display:flex; align-items:center; gap:8px;"><i class="fas fa-tag" style="color:var(--accent);"></i> Line Attributes</h3>
+                <button class="icon-btn" id="line-attr-close-top"><i class="fas fa-times"></i></button>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:14px;">
+                <!-- Song Part (itunes:song-part) -->
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                    <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Song Part (itunes:song-part)</label>
+                    <select id="line-attr-song-part" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
+                        <option value="">None</option>
+                        <option value="Verse">Verse</option>
+                        <option value="Chorus">Chorus</option>
+                        <option value="Bridge">Bridge</option>
+                        <option value="Intro">Intro</option>
+                        <option value="Outro">Outro</option>
+                        <option value="Pre-Chorus">Pre-Chorus</option>
+                        <option value="Hook">Hook</option>
+                        <option value="Solo">Solo</option>
+                        <option value="custom">Custom...</option>
+                    </select>
+                </div>
+                <!-- Custom Song Part Input (hidden by default) -->
+                <div id="line-attr-custom-part-wrapper" style="display:none; flex-direction:column; gap:6px;">
+                    <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Custom Song Part Name</label>
+                    <input type="text" id="line-attr-custom-part" placeholder="e.g. Verse 3, Chorus (Outro)" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
+                </div>
+                <!-- Apply to subsequent lines checkbox -->
+                <div style="display:flex; gap:8px; align-items:center; margin-top:-4px;">
+                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:11.5px; color:var(--text-muted);">
+                        <input type="checkbox" id="line-attr-apply-subsequent" checked style="accent-color:var(--accent);"> Apply to subsequent lines (until next part)
+                    </label>
+                </div>
+                <!-- Agent (ttm:agent) -->
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                    <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Vocal Agent (ttm:agent)</label>
+                    <select id="line-attr-agent" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
+                        <option value="">None</option>
+                    </select>
+                </div>
+                <!-- Background Vocal Role Checkbox -->
+                <div style="display:flex; gap:8px; align-items:center; background:var(--bg-dark); border:1px solid var(--border); border-radius:8px; padding:10px 12px;">
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12.5px;">
+                        <input type="checkbox" id="line-attr-bg" style="accent-color:var(--accent);"> Background Vocal (ttm:role="x-bg")
+                    </label>
+                </div>
+            </div>
+            <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:20px; border-top:1px solid var(--border); padding-top:16px;">
+                <button class="btn" id="line-attr-cancel">Cancel</button>
+                <button class="btn btn-primary" id="line-attr-save"><i class="fas fa-check"></i> Apply</button>
+            </div>
+        </div>
+    </div>
+
     <script src="parser.js"></script>
+    <script src="metadata-editor.js"></script>
     <script src="script.js"></script>
 
 </body>

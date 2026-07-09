@@ -144,6 +144,17 @@ These advanced tools are designed to fix one of the most common issues in lyric 
 
 ## 🌟 What's New
 
+### v0.0.8
+
+- **Integrated Metadata Editor**: Added a tag editor popup under the Tools dropdown. Allows editing global parameters (Title, Artist, Album, Language, Creator, Lyricist, Copyright, iTunes Timing Mode, Leading Silence, Agent list, and Songwriters).
+- **ID3 Tag & Lyrics Metadata Extraction**: Supports extracting ID3v2 tags directly from loaded audio files (or using filename heuristics) and extracting lyrics headers from loaded LRC/TTML files. Includes a confirmation check to prevent accidental overwrites.
+- **Apple Music / iTunes TTML Support**: Adds export options for `Apple TTML (iTunes)` and `Apple TTML (Words)` Karaoke, including songwriters metadata, agents definitions, and segment groupings.
+- **Interactive Multi-Row Overlap Layout**: Resolves timing overlap editing blocks. Sequential words layout on one row, but overlapping main and background vocal blocks dynamically split into double rows on hover or drag to make editing boundary timestamps simple.
+- **Parentheses-Based Background Vocal Input**: Typing words inside parentheses `( )` in the Edit Text modal automatically flags them as background vocals (`ttm:role="x-bg"`).
+- **Line Attributes dialog**: Added a tag icon button on timeline tracks to customize song parts (`itunes:song-part`) and vocal agents (`ttm:agent`). Includes option to automatically propagate parts to subsequent lines.
+- **Symmetrical Track Indicators**: Redesigned left-hand `track-info` and right-hand `track-end-time` layouts into stacked double rows. Displays vocal agent and song part badges on the left, balanced by a purple `BG` indicator badge on the right, keeping layouts symmetrical and highly readable on narrow or portrait viewports.
+- **Bidirectional JSON Support**: Fully exports and imports comprehensive song metadata (title, artist, album, language, agents list, songwriters, and duration) alongside explicit cue/word properties (vocal agents, song parts, background vocal roles, and exact timing ranges).
+
 ### v0.0.7
 
 - **In-Browser AIFF Audio Support**: Adds full client-side decoding and conversion of AIFF (`.aif`, `.aiff`) audio files.

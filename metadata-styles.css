@@ -1,0 +1,107 @@
+/* ── Metadata & Apple TTML Additions ── */
+.word-block.bg-word {
+  background: rgba(138, 96, 255, 0.22) !important;
+  border-color: rgba(138, 96, 255, 0.45) !important;
+  box-shadow: 0 0 0 1px rgba(138, 96, 255, 0.15) inset;
+}
+.word-block.bg-word .word-text {
+  font-style: italic;
+  opacity: 0.92;
+}
+.timeline-track.bg-line {
+  border-left: 3px solid rgba(138, 96, 255, 0.6) !important;
+  background: linear-gradient(90deg, rgba(138,96,255,0.06), transparent 40%) !important;
+}
+.metadata-tabs .toggle-btn.active {
+  background: var(--accent) !important;
+  color: #fff !important;
+}
+#metadata-modal .modal-box {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+}
+
+/* Agent-specific colors and timeline highlights */
+.timeline-track.agent-v1 {
+  border-left: 3px solid #2f54eb !important;
+}
+.timeline-track.agent-v2 {
+  border-left: 3px solid #52c41a !important;
+}
+.timeline-track.agent-v3 {
+  border-left: 3px solid #fa8c16 !important;
+}
+.timeline-track.agent-v4 {
+  border-left: 3px solid #13c2c2 !important;
+}
+/* Background vocal border has precedence */
+.timeline-track.bg-line {
+  border-left: 3px solid rgba(138, 96, 255, 0.8) !important;
+}
+
+/* Badges for Agent and Part */
+.agent-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-left: 5px;
+  color: #fff !important;
+  text-transform: uppercase;
+  display: inline-block;
+  vertical-align: middle;
+}
+.badge-v1 { background: #2f54eb; }
+.badge-v2 { background: #52c41a; }
+.badge-v3 { background: #fa8c16; }
+.badge-v4 { background: #13c2c2; }
+.agent-badge:not(.badge-v1):not(.badge-v2):not(.badge-v3):not(.badge-v4) { background: #666; }
+
+.part-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-left: 5px;
+  background: var(--accent);
+  color: #000 !important;
+  display: inline-block;
+  vertical-align: middle;
+  max-width: 60px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* Multi-row stacking of overlapping word blocks (Main vs Background vocals) - only on Hover or Drag */
+.timeline-track.has-overlapping-words:hover .word-block.bg-word,
+.timeline-track.has-overlapping-words.is-dragging .word-block.bg-word {
+  top: 50% !important;
+  bottom: 0 !important;
+  height: 50% !important;
+  border-top: 1px solid rgba(138, 96, 255, 0.3) !important;
+}
+.timeline-track.has-overlapping-words:hover .word-block:not(.bg-word),
+.timeline-track.has-overlapping-words.is-dragging .word-block:not(.bg-word) {
+  top: 0 !important;
+  bottom: 50% !important;
+  height: 50% !important;
+}
+
+/* Statically overlay overlapping blocks with transparency when not editing */
+.timeline-track.has-overlapping-words:not(:hover):not(.is-dragging) .word-block {
+  top: 0 !important;
+  bottom: 0 !important;
+  height: 100% !important;
+  opacity: 0.65;
+}
+
+/* Ensure handles and text adapt nicely in split row mode */
+.timeline-track.has-overlapping-words:hover .word-text,
+.timeline-track.has-overlapping-words.is-dragging .word-text {
+  font-size: 10px !important;
+}
+.timeline-track.has-overlapping-words:hover .word-duration,
+.timeline-track.has-overlapping-words.is-dragging .word-duration {
+  display: none !important; /* Hide duration text to prevent overlap clutter in split view */
+}

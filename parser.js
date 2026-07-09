@@ -310,9 +310,91 @@ function parseJSON_(content) {
       startMs: Math.round(c.start !== undefined ? c.start : (c.startMs || 0)), 
       endMs: Math.round(c.end !== undefined ? c.end : (c.endMs || 0)), 
       text: c.text||'', 
-      words: c.words || null 
+      words: c.words ? c.words.map((w, idx) => ({
+        id: w.id || idx + 1,
+        text: w.text || '',
+        startMs: Math.round(w.startMs !== undefined ? w.startMs : (w.start || 0)),
+        endMs: Math.round(w.endMs !== undefined ? w.endMs : (w.end || 0)),
+        isBackground: !!(w.isBackground || w.role === 'x-bg'),
+        role: w.role || (w.isBackground ? 'x-bg' : null),
+        agent: w.agent || null
+      })) : null,
+      isBackground: !!(c.isBackground || c.role === 'x-bg'),
+      role: c.role || (c.isBackground ? 'x-bg' : null),
+      agent: c.agent || null,
+      songPart: c.songPart || null
     }));
   } catch(e) { return []; }
+}
+
+function getRole(el){ if(!el || !el.getAttribute) return ''; return el.getAttribute('ttm:role') || el.getAttributeNS('http://www.w3.org/ns/ttml#metadata','role') || el.getAttribute('role') || ''; }
+function getAgent(el){ if(!el || !el.getAttribute) return ''; return el.getAttribute('ttm:agent') || el.getAttributeNS('http://www.w3.org/ns/ttml#metadata','agent') || el.getAttribute('agent') || ''; }
+function isBackgroundRole(role){ if(!role) return false; const r = role.toLowerCase(); return r === 'x-bg' || r === 'x-background' || r === 'background' || r === 'x-bg-vocal' || r.includes('bg'); }
+
+function extractTTMLMetadata(content) {
+  const parser = new DOMParser();
+  const xml = parser.parseFromString(content, "text/xml");
+  const meta = {};
+  const tt = xml.documentElement;
+  if (tt) {
+    meta.itunesTiming = tt.getAttribute('itunes:timing') || tt.getAttributeNS('http://music.apple.com/lyric-ttml-internal','timing') || '';
+    meta.language = tt.getAttribute('xml:lang') || tt.getAttribute('lang') || '';
+  }
+  const head = xml.getElementsByTagName('head')[0];
+  if (head) {
+    const titleEl = head.getElementsByTagName('ttm:title')[0] || head.getElementsByTagNameNS('http://www.w3.org/ns/ttml#metadata','title')[0];
+    if (titleEl) meta.title = titleEl.textContent.trim();
+    
+    const copyrightEl = head.getElementsByTagName('ttm:copyright')[0] || head.getElementsByTagNameNS('http://www.w3.org/ns/ttml#metadata','copyright')[0];
+    if (copyrightEl) meta.copyright = copyrightEl.textContent.trim();
+
+    const agents = [];
+    const agentEls = head.getElementsByTagName('ttm:agent');
+    for (let i = 0; i < agentEls.length; i++) {
+      const a = agentEls[i];
+      agents.push({
+        id: a.getAttribute('xml:id') || a.getAttribute('id') || `v${i+1}`,
+        type: a.getAttribute('type') || 'person',
+        name: a.textContent.trim() || ''
+      });
+    }
+    if (agents.length) meta.agents = agents;
+
+    const itunesMeta = head.getElementsByTagName('iTunesMetadata')[0] || head.getElementsByTagNameNS('http://music.apple.com/lyric-ttml-internal','iTunesMetadata')[0];
+    if (itunesMeta) {
+      const sw = [];
+      const swEls = itunesMeta.getElementsByTagName('songwriter');
+      for (let i = 0; i < swEls.length; i++) {
+        const t = swEls[i].textContent.trim();
+        if (t) sw.push(t);
+      }
+      if (sw.length) meta.songwriters = sw;
+      const leading = itunesMeta.getAttribute('leadingSilence');
+      if (leading) meta.leadingSilence = parseInt(leading) || 0;
+    }
+  }
+  return meta;
+}
+
+function parseLRCAndExtractMetadata(content) {
+  const metadata = {};
+  const lines = content.split(/\r?\n/);
+  lines.forEach(line => {
+    const m = line.match(/^\[(ti|ar|al|by|au|length|offset|re|ve|la):([^\]]*)\]/i);
+    if (m) {
+      const key = m[1].toLowerCase();
+      const val = m[2].trim();
+      if (key === 'ti') metadata.title = val;
+      else if (key === 'ar') metadata.artist = val;
+      else if (key === 'al') metadata.album = val;
+      else if (key === 'by') metadata.by = val;
+      else if (key === 'au') metadata.author = val;
+      else if (key === 'offset') metadata.offset = parseInt(val) || 0;
+      else if (key === 'la') metadata.language = val;
+      else if (key === 're') metadata.copyright = val;
+    }
+  });
+  return metadata;
 }
 
 function parseMetadata(content, format) {
@@ -320,9 +402,31 @@ function parseMetadata(content, format) {
   if (format === 'lyricsfile') {
     const match = content.match(/duration_ms:\s*(\d+)/);
     if (match) metadata.durationMs = parseInt(match[1]);
+    const titleMatch = content.match(/title:\s*"([^"]*)"/);
+    if (titleMatch) metadata.title = titleMatch[1];
+    const artistMatch = content.match(/artist:\s*"([^"]*)"/);
+    if (artistMatch) metadata.artist = artistMatch[1];
+  } else if (format === 'lrc') {
+    Object.assign(metadata, parseLRCAndExtractMetadata(content));
+  } else if (format === 'ttml') {
+    try {
+      const m = extractTTMLMetadata(content);
+      Object.assign(metadata, m);
+    } catch(e) {}
+  } else if (format === 'json') {
+    try {
+      const p = JSON.parse(content);
+      if (p && p.metadata) {
+        Object.assign(metadata, p.metadata);
+        if (p.metadata.duration_ms) {
+          metadata.durationMs = p.metadata.duration_ms;
+        }
+      }
+    } catch(e) {}
   }
   return metadata;
 }
+
 
 function decodeHTMLEntities(text) {
   if (!text) return text;
@@ -375,26 +479,163 @@ function parseTTML(content) {
   const xml = parser.parseFromString(content, "text/xml");
   const ps = xml.getElementsByTagName('p');
   const cues = [];
+  let globalMeta = {};
+  try {
+    globalMeta = extractTTMLMetadata(content);
+  } catch(e) {}
+  
   for (let i = 0; i < ps.length; i++) {
     const p = ps[i];
-    const startMs = timeToMs(p.getAttribute('begin'));
-    const endMs = timeToMs(p.getAttribute('end')) || (startMs + timeToMs(p.getAttribute('dur')));
+    const beginAttr = p.getAttribute('begin');
+    const endAttr = p.getAttribute('end');
+    const durAttr = p.getAttribute('dur');
+    let startMs = beginAttr ? timeToMs(beginAttr) : 0;
+    let endMs = 0;
+    if (endAttr) endMs = timeToMs(endAttr);
+    else if (durAttr) endMs = startMs + timeToMs(durAttr);
+    else endMs = startMs + 2000;
+
+    const pRole = getRole(p);
+    const pAgent = getAgent(p);
+    const pIsBg = isBackgroundRole(pRole);
+    
+    let songPart = null;
+    let parent = p.parentElement;
+    while (parent) {
+      if ((parent.localName || parent.tagName || '').toLowerCase() === 'div') {
+        const sp = parent.getAttribute('itunes:song-part') || parent.getAttributeNS('http://music.apple.com/lyric-ttml-internal', 'song-part') || parent.getAttribute('song-part');
+        if (sp) {
+          songPart = sp;
+          break;
+        }
+      }
+      parent = parent.parentElement;
+    }
     const words = [];
-    const spans = p.getElementsByTagName('span');
-    let text = p.textContent.trim();
-    if (spans.length > 0) {
-      for (let j = 0; j < spans.length; j++) {
-        const s = spans[j];
-        words.push({
-          id: j + 1,
-          text: s.textContent.trim(),
-          startMs: timeToMs(s.getAttribute('begin')) || startMs,
-          endMs: timeToMs(s.getAttribute('end')) || endMs
-        });
+    let wordId = 1;
+
+    function pushWord(text, sMs, eMs, isBg, agent, role) {
+      if (!text) return;
+      const clean = text.replace(/\s+/g, ' ').trim();
+      if (!clean) return;
+      words.push({
+        id: wordId++,
+        text: clean,
+        startMs: (sMs !== undefined && sMs !== null) ? sMs : startMs,
+        endMs: (eMs !== undefined && eMs !== null) ? eMs : endMs,
+        isBackground: !!isBg,
+        agent: agent || pAgent || null,
+        role: isBg ? 'x-bg' : (role || null)
+      });
+    }
+
+    function hasTimedChildSpans(node) {
+      return Array.from(node.childNodes).some(n => 
+        n.nodeType === 1 && 
+        n.localName === 'span' && 
+        (n.hasAttribute('begin') || n.hasAttribute('end') || n.hasAttribute('dur') || hasTimedChildSpans(n))
+      );
+    }
+
+    function traverse(node, inheritedBg, inheritedAgent) {
+      if (!node) return;
+      if (node.nodeType === 3) {
+        const txt = node.textContent.trim();
+        if (txt) {
+          pushWord(txt, null, null, inheritedBg, inheritedAgent, inheritedBg ? 'x-bg' : null);
+        }
+        return;
+      }
+      if (node.nodeType !== 1) return;
+
+      const tag = (node.localName || node.tagName || '').toLowerCase();
+      if (tag === 'br') return;
+
+      const role = getRole(node);
+      const agent = getAgent(node);
+      const curBg = inheritedBg || isBackgroundRole(role);
+      const curAgent = agent || inheritedAgent;
+
+      if (tag === 'span') {
+        const hasBegin = node.hasAttribute('begin');
+        const hasEnd = node.hasAttribute('end');
+        const hasDur = node.hasAttribute('dur');
+        const hasTiming = hasBegin || hasEnd || hasDur;
+        const timedChildren = hasTimedChildSpans(node);
+
+        if (!hasTiming && timedChildren) {
+          for (let child of node.childNodes) {
+            traverse(child, curBg, curAgent);
+          }
+        } else if (hasTiming) {
+          if (timedChildren) {
+            for (let child of node.childNodes) {
+              traverse(child, curBg, curAgent);
+            }
+          } else {
+            let sMs = hasBegin ? timeToMs(node.getAttribute('begin')) : startMs;
+            let eMs = 0;
+            if (hasEnd) eMs = timeToMs(node.getAttribute('end'));
+            else if (hasDur) eMs = sMs + timeToMs(node.getAttribute('dur'));
+            else eMs = endMs;
+            const txt = node.textContent.trim();
+            if (txt) {
+              pushWord(txt, sMs, eMs, curBg, curAgent, role);
+            }
+          }
+        } else {
+          if (node.childElementCount > 0) {
+            for (let child of node.childNodes) {
+              traverse(child, curBg, curAgent);
+            }
+          } else {
+            const txt = node.textContent.trim();
+            if (txt) {
+              pushWord(txt, null, null, curBg, curAgent, role);
+            }
+          }
+        }
+      } else {
+        for (let child of node.childNodes) {
+          traverse(child, inheritedBg, inheritedAgent);
+        }
       }
     }
-    cues.push({ id: i + 1, startMs, endMs, text, words: words.length ? words : null });
+
+    for (let child of p.childNodes) {
+      traverse(child, pIsBg, pAgent);
+    }
+
+    let text = '';
+    if (words.length > 0) {
+      text = words.map(w => w.text).join(' ').replace(/\s+/g, ' ').trim();
+    } else {
+      text = (p.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+
+    if (words.length > 0) {
+      const first = words[0];
+      const last = words[words.length - 1];
+      if (!beginAttr && first.startMs) startMs = first.startMs;
+      if (!endAttr && !durAttr && last.endMs) endMs = last.endMs;
+    }
+    if (endMs <= startMs) endMs = startMs + 2000;
+
+    cues.push({
+      id: i + 1,
+      startMs,
+      endMs,
+      text,
+      words: words.length ? words : null,
+      role: pRole || null,
+      agent: pAgent || null,
+      isBackground: pIsBg,
+      songPart: songPart || null
+    });
   }
+  try {
+    if (typeof window !== 'undefined') window.__lastTTMLMetadata = globalMeta;
+  } catch(e) {}
   return cues;
 }
 
@@ -675,28 +916,44 @@ function escapeXML(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+function msToTTMLTime(ms){ return msToVtt(ms); }
+
 function stringifyTTML(cues, karaoke, durationMs, options = {}) {
   const autoEmpty = options.autoEmptyLines !== false;
-  let head = `  <head>\n    <metadata>\n      <ttm:title>Lyrics</ttm:title>\n    </metadata>\n    <styling>\n      <style xml:id="s1" tts:textAlign="center" tts:fontFamily="Arial" tts:fontSize="100%"/>\n    </styling>\n    <layout>\n      <region xml:id="bottom" tts:displayAlign="after" tts:extent="80% 40%" tts:origin="10% 50%"/>\n    </layout>\n  </head>`;
+  const metadata = options.metadata || {};
+  const title = metadata.title || metadata.ttmlTitle || "Lyrics";
+  const lang = metadata.language || "en";
+  let head = `  <head>\n    <metadata>\n      <ttm:title>${escapeXML(title)}</ttm:title>\n`;
+  if (metadata.copyright) head += `      <ttm:copyright>${escapeXML(metadata.copyright)}</ttm:copyright>\n`;
+  head += `    </metadata>\n    <styling>\n      <style xml:id="s1" tts:textAlign="center" tts:fontFamily="Arial" tts:fontSize="100%"/>\n    </styling>\n    <layout>\n      <region xml:id="bottom" tts:displayAlign="after" tts:extent="80% 40%" tts:origin="10% 50%"/>\n    </layout>\n  </head>`;
   let bodyLines = [];
   
   for (let i = 0; i < cues.length; i++) {
     const cue = cues[i];
+    const pAttrs = [];
+    pAttrs.push(`begin="${msToTTMLTime(cue.startMs)}"`);
+    pAttrs.push(`end="${msToTTMLTime(cue.endMs)}"`);
+    if (cue.agent) pAttrs.push(`ttm:agent="${cue.agent}"`);
+    if (cue.isBackground || cue.role === 'x-bg') pAttrs.push(`ttm:role="x-bg"`);
+    pAttrs.push(`region="bottom"`);
+    pAttrs.push(`style="s1"`);
     let content = (cue.text || "").replace(/\n/g, '<br/>');
     if (karaoke && cue.words && cue.words.length > 0) {
-      const spans = cue.words.map((w, i, arr) => {
+      const spans = cue.words.map((w, idx, arr) => {
         let wStart = w.startMs !== undefined ? w.startMs : cue.startMs;
         let wEnd = w.endMs !== undefined ? w.endMs : (wStart + 300);
-        if (i < arr.length - 1 && arr[i+1].startMs) wEnd = Math.min(wEnd, arr[i+1].startMs);
-        return `        <span begin="${msToVtt(wStart)}" end="${msToVtt(wEnd)}">${escapeXML(w.text)}</span>`;
+        if (idx < arr.length - 1 && arr[idx+1].startMs) wEnd = Math.min(wEnd, arr[idx+1].startMs);
+        let extra = '';
+        if (w.isBackground || w.role === 'x-bg') extra += ` ttm:role="x-bg"`;
+        if (w.agent && w.agent !== cue.agent) extra += ` ttm:agent="${w.agent}"`;
+        return `        <span begin="${msToVtt(wStart)}" end="${msToVtt(wEnd)}"${extra}>${escapeXML(w.text)}</span>`;
       });
       content = '\n' + spans.join('\n') + '\n      ';
     } else {
       content = escapeXML(content);
     }
-    bodyLines.push(`      <p begin="${msToVtt(cue.startMs)}" end="${msToVtt(cue.endMs)}" region="bottom" style="s1">${content}</p>`);
+    bodyLines.push(`      <p ${pAttrs.join(' ')}>${content}</p>`);
     
-    // Gap filling (blank line support) - only between cues
     const nextStart = (i < cues.length - 1) ? cues[i + 1].startMs : null;
     if (autoEmpty && nextStart && cue.endMs < nextStart - 10) {
       bodyLines.push(`      <p begin="${msToVtt(cue.endMs)}" end="${msToVtt(nextStart)}" region="bottom" style="s1"></p>`);
@@ -704,7 +961,123 @@ function stringifyTTML(cues, karaoke, durationMs, options = {}) {
   }
 
   const body = bodyLines.join('\n');
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:tts="http://www.w3.org/ns/ttml#styling" xmlns:ttp="http://www.w3.org/ns/ttml#parameter" ttp:timeBase="media" lang="en">\n${head}\n  <body>\n    <div>\n${body}\n    </div>\n  </body>\n</tt>`;
+  const bodyAttr = durationMs ? ` dur="${msToTTMLTime(durationMs)}"` : '';
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:tts="http://www.w3.org/ns/ttml#styling" xmlns:ttp="http://www.w3.org/ns/ttml#parameter" ttp:timeBase="media" xml:lang="${lang}">\n${head}\n  <body${bodyAttr}>\n    <div>\n${body}\n    </div>\n  </body>\n</tt>`;
+}
+
+function stringifyAppleTTML(cues, karaoke, durationMs, options = {}) {
+  const autoEmpty = options.autoEmptyLines !== false;
+  const metadata = options.metadata || {};
+  const lang = metadata.language || metadata.xmlLang || "en";
+  const timing = metadata.itunesTiming || metadata.appleTiming || (karaoke ? "Word" : "Line");
+  const agents = (metadata.agents && metadata.agents.length) ? metadata.agents : [{id:"v1", type:"person"}];
+  let songwriters = metadata.songwriters || metadata.appleSongwriters || [];
+  if (typeof songwriters === 'string') songwriters = songwriters.split('\n').map(s=>s.trim()).filter(Boolean);
+  const leadingSilence = metadata.leadingSilence || 0;
+  const title = metadata.title || metadata.ttmlTitle || "Lyrics";
+
+  let head = `  <head>\n    <metadata>\n`;
+  agents.forEach(a=>{
+    const id = a.id || `v${Math.random()}`;
+    const type = a.type || 'person';
+    head += `      <ttm:agent type="${type}" xml:id="${id}"/>\n`;
+  });
+  if (title) head += `      <ttm:title>${escapeXML(title)}</ttm:title>\n`;
+  head += `      <iTunesMetadata xmlns="http://music.apple.com/lyric-ttml-internal" leadingSilence="${leadingSilence}">\n        <translations/>\n        <songwriters>\n`;
+  if (songwriters.length===0) {
+    head += `          <songwriter></songwriter>\n`;
+  } else {
+    songwriters.forEach(sw=>{
+      head += `          <songwriter>${escapeXML(sw)}</songwriter>\n`;
+    });
+  }
+  head += `        </songwriters>\n      </iTunesMetadata>\n    </metadata>\n    <styling>\n      <style xml:id="s1" tts:textAlign="center" tts:fontFamily="Arial" tts:fontSize="100%"/>\n    </styling>\n    <layout>\n      <region xml:id="bottom" tts:displayAlign="after" tts:extent="80% 40%" tts:origin="10% 50%"/>\n    </layout>\n  </head>`;
+
+  // Group cues by consecutive songPart values
+  const divs = [];
+  let currentDiv = null;
+  cues.forEach(cue => {
+    const part = cue.songPart || "";
+    if (!currentDiv || currentDiv.part !== part) {
+      currentDiv = { part: part, cues: [] };
+      divs.push(currentDiv);
+    }
+    currentDiv.cues.push(cue);
+  });
+
+  let bodyLines = [];
+  divs.forEach(d => {
+    if (d.cues.length === 0) return;
+    const divStart = d.cues[0].startMs;
+    const divEnd = d.cues[d.cues.length - 1].endMs;
+    let divAttrs = [];
+    divAttrs.push(`begin="${msToTTMLTime(divStart)}"`);
+    divAttrs.push(`end="${msToTTMLTime(divEnd)}"`);
+    if (d.part) {
+      divAttrs.push(`itunes:song-part="${escapeXML(d.part)}"`);
+    }
+    
+    let pLines = [];
+    d.cues.forEach((cue, i) => {
+      let pAttrs = [];
+      pAttrs.push(`begin="${msToTTMLTime(cue.startMs)}"`);
+      pAttrs.push(`end="${msToTTMLTime(cue.endMs)}"`);
+      if (cue.agent) pAttrs.push(`ttm:agent="${cue.agent}"`);
+      if (cue.isBackground || cue.role === 'x-bg') pAttrs.push(`ttm:role="x-bg"`);
+      pAttrs.push(`region="bottom"`);
+      pAttrs.push(`style="s1"`);
+      let content = '';
+
+      if (karaoke && cue.words && cue.words.length > 0) {
+        const groups = [];
+        let cur = null;
+        cue.words.forEach(w => {
+          const isBg = !!(w.isBackground || w.role === 'x-bg');
+          if (!cur || cur.isBg !== isBg) {
+            cur = { isBg, words: [] };
+            groups.push(cur);
+          }
+          cur.words.push(w);
+        });
+        let innerSpans = [];
+        groups.forEach(g => {
+          if (g.isBg) {
+            const inner = g.words.map(w => {
+              const ws = w.startMs !== undefined ? w.startMs : cue.startMs;
+              const we = w.endMs !== undefined ? w.endMs : cue.endMs;
+              let extra = '';
+              if (w.agent && w.agent !== cue.agent) extra += ` ttm:agent="${w.agent}"`;
+              return `          <span begin="${msToTTMLTime(ws)}" end="${msToTTMLTime(we)}"${extra}>${escapeXML(w.text)}</span>`;
+            }).join('\n');
+            innerSpans.push(`        <span ttm:role="x-bg">\n${inner}\n        </span>`);
+          } else {
+            g.words.forEach(w => {
+              const ws = w.startMs !== undefined ? w.startMs : cue.startMs;
+              const we = w.endMs !== undefined ? w.endMs : cue.endMs;
+              let extra = '';
+              if (w.agent && w.agent !== cue.agent) extra += ` ttm:agent="${w.agent}"`;
+              innerSpans.push(`        <span begin="${msToTTMLTime(ws)}" end="${msToTTMLTime(we)}"${extra}>${escapeXML(w.text)}</span>`);
+            });
+          }
+        });
+        content = '\n' + innerSpans.join('\n') + '\n      ';
+      } else {
+        content = escapeXML(cue.text || '');
+      }
+      pLines.push(`      <p ${pAttrs.join(' ')}>${content}</p>`);
+      
+      const nextStart = (i < d.cues.length - 1) ? d.cues[i + 1].startMs : null;
+      if (autoEmpty && nextStart && cue.endMs < nextStart - 10) {
+        pLines.push(`      <p begin="${msToTTMLTime(cue.endMs)}" end="${msToTTMLTime(nextStart)}" region="bottom" style="s1"></p>`);
+      }
+    });
+
+    bodyLines.push(`    <div ${divAttrs.join(' ')}>\n${pLines.join('\n')}\n    </div>`);
+  });
+
+  const body = bodyLines.join('\n');
+  const bodyAttr = durationMs ? ` dur="${msToTTMLTime(durationMs)}"` : '';
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:tts="http://www.w3.org/ns/ttml#styling" xmlns:ttp="http://www.w3.org/ns/ttml#parameter" itunes:timing="${timing}" xml:lang="${lang}">\n${head}\n  <body${bodyAttr}>\n${body}\n  </body>\n</tt>`;
 }
 
 function stringifySRV1(cues) {
@@ -803,7 +1176,7 @@ function stringifyTXT(cues) {
       const nextStart = cues[i + 1].startMs;
       const gap = nextStart - currentEnd;
 
-      if (gap >= STANZA_BREAK_THRESHOLD) {
+    if (gap >= STANZA_BREAK_THRESHOLD) {
         result += '\n';
       }
     }
@@ -813,9 +1186,21 @@ function stringifyTXT(cues) {
 
 function stringifyLRC(cues, enhanced, durationMs, options = {}) {
   const autoEmpty = options.autoEmptyLines !== false;
+  const metadata = options.metadata || {};
   let output = [];
+  if (metadata.title) output.push(`[ti:${metadata.title}]`);
+  if (metadata.artist) output.push(`[ar:${metadata.artist}]`);
+  if (metadata.album) output.push(`[al:${metadata.album}]`);
+  if (metadata.author || metadata.by) output.push(`[by:${metadata.author || metadata.by}]`);
+  if (metadata.lyricist) output.push(`[au:${metadata.lyricist}]`);
+  if (metadata.language) output.push(`[la:${metadata.language}]`);
+  if (metadata.offset) output.push(`[offset:${metadata.offset}]`);
+  if (metadata.copyright) output.push(`[re:${metadata.copyright}]`);
   if (durationMs) {
-    output.push(`[length:${msToLrc(durationMs)}]`);
+    const totalSecs = Math.round(durationMs / 1000);
+    const m = Math.floor(totalSecs / 60);
+    const s = totalSecs % 60;
+    output.push(`[length:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}]`);
   }
 
   for (let i = 0; i < cues.length; i++) {
@@ -824,12 +1209,18 @@ function stringifyLRC(cues, enhanced, durationMs, options = {}) {
     if (enhanced && c.words && c.words.length > 0) {
       const hasVisibleText = c.words.some(w => (w.text || "").trim().length > 0);
       if (hasVisibleText) {
-        line += " " + c.words.map(w => `<${msToLrc(w.startMs)}>${w.text}`).join(' ');
+        line += " " + c.words.map(w => {
+          const prefix = w.isBackground ? '(' : '';
+          const suffix = w.isBackground ? ')' : '';
+          return `<${msToLrc(w.startMs)}>${prefix}${w.text}${suffix}`;
+        }).join(' ');
       } else if (c.text && c.text.trim()) {
         line += " " + c.text;
       }
     } else if (c.text && c.text.trim()) {
-      line += " " + c.text;
+      let txt = c.text;
+      if (c.isBackground) txt = `(${txt})`;
+      line += " " + txt;
     }
     output.push(line);
 
@@ -842,19 +1233,31 @@ function stringifyLRC(cues, enhanced, durationMs, options = {}) {
   return output.join('\n');
 }
 
-function stringifySRT(cues) {
-  return cues.map((c, i) => {
+function stringifySRT(cues, options = {}) {
+  const metadata = options.metadata || {};
+  let header = '';
+  if (metadata.title || metadata.artist) {
+    header = `NOTE Title: ${metadata.title || ''} Artist: ${metadata.artist || ''}\n\n`;
+  }
+  return header + cues.map((c, i) => {
     return `${i + 1}\n${msToSrt(c.startMs)} --> ${msToSrt(c.endMs)}\n${c.text || ""}\n`;
   }).join('\n') + '\n'; // Ensure trailing newline
 }
 
-function stringifyVTT(cues, karaoke) {
-  let header = 'WEBVTT\n\n';
+function stringifyVTT(cues, karaoke, options = {}) {
+  const metadata = options.metadata || {};
+  let header = 'WEBVTT\n';
+  if (metadata.title) header += `NOTE Title: ${metadata.title}\n`;
+  if (metadata.artist) header += `NOTE Artist: ${metadata.artist}\n`;
+  if (metadata.language) header += `NOTE Language: ${metadata.language}\n`;
+  if (options.durationMs) header += `NOTE Duration: ${msToVtt(options.durationMs)}\n`;
+  header += '\n';
   return header + cues.map(c => {
     let text = c.text || "";
     if (karaoke && c.words && c.words.length > 0) {
        text = c.words.map(w => `<${msToVtt(w.startMs)}>${w.text}`).join(' ');
     }
+    if (c.isBackground) text = `(${text})`;
     return `${msToVtt(c.startMs)} --> ${msToVtt(c.endMs)}\n${text}\n`;
   }).join('\n') + '\n'; // Ensure trailing newline
 }
@@ -874,33 +1277,63 @@ function exportAs(cues, format, durationMs, options = {}) {
     }
   });
 
+  const metadata = options.metadata || {};
+
   switch(format) {
-    case 'lrc': return stringifyLRC(exportCues, false, durationMs, options);
-    case 'lrc_enhanced': return stringifyLRC(exportCues, true, durationMs, options);
-    case 'srt': return stringifySRT(exportCues);
-    case 'vtt': return stringifyVTT(exportCues, false);
-    case 'vtt_karaoke': return stringifyVTT(exportCues, true);
-    case 'ttml': return stringifyTTML(exportCues, false, durationMs, options);
-    case 'ttml_karaoke': return stringifyTTML(exportCues, true, durationMs, options);
+    case 'lrc': return stringifyLRC(exportCues, false, durationMs, {autoEmptyLines: options.autoEmptyLines, metadata});
+    case 'lrc_enhanced': return stringifyLRC(exportCues, true, durationMs, {autoEmptyLines: options.autoEmptyLines, metadata});
+    case 'srt': return stringifySRT(exportCues, {metadata});
+    case 'vtt': return stringifyVTT(exportCues, false, {metadata, durationMs});
+    case 'vtt_karaoke': return stringifyVTT(exportCues, true, {metadata, durationMs});
+    case 'ttml': return stringifyTTML(exportCues, false, durationMs, {autoEmptyLines: options.autoEmptyLines, metadata});
+    case 'ttml_karaoke': return stringifyTTML(exportCues, true, durationMs, {autoEmptyLines: options.autoEmptyLines, metadata});
+    case 'apple_ttml': return stringifyAppleTTML(exportCues, false, durationMs, {autoEmptyLines: options.autoEmptyLines, metadata});
+    case 'apple_ttml_karaoke': return stringifyAppleTTML(exportCues, true, durationMs, {autoEmptyLines: options.autoEmptyLines, metadata});
+    case 'ttml_apple': return stringifyAppleTTML(exportCues, false, durationMs, {autoEmptyLines: options.autoEmptyLines, metadata});
+    case 'ttml_apple_karaoke': return stringifyAppleTTML(exportCues, true, durationMs, {autoEmptyLines: options.autoEmptyLines, metadata});
     case 'srv1': return stringifySRV1(exportCues);
     case 'srv2': return stringifySRV2(exportCues);
     case 'srv3': return stringifySRV3(exportCues);
     case 'srv3_karaoke': return stringifySRV3Karaoke(exportCues);
     case 'audacity_karaoke': return stringifyAudacity(exportCues, true);
     case 'json': return JSON.stringify({ 
-      metadata: { duration_ms: durationMs },
-      cues: exportCues.map(c => ({ startMs: c.startMs, endMs: c.endMs, text: c.text, words: c.words })) 
+      metadata: { title: metadata.title, artist: metadata.artist, album: metadata.album, language: metadata.language, duration_ms: durationMs, ...metadata },
+      cues: exportCues.map(c => ({
+        startMs: c.startMs,
+        endMs: c.endMs,
+        text: c.text,
+        words: c.words ? c.words.map(w => ({
+          text: w.text,
+          startMs: w.startMs,
+          endMs: w.endMs,
+          isBackground: !!(w.isBackground || w.role === 'x-bg'),
+          role: w.role || null,
+          agent: w.agent || null
+        })) : null,
+        isBackground: !!(c.isBackground || c.role === 'x-bg'),
+        role: c.role || null,
+        agent: c.agent || null,
+        songPart: c.songPart || null
+      }))
     }, null, 2);
     case 'json3': return stringifyJSON3(exportCues);
-    case 'lyricsfile': return stringifyLyricsFile(exportCues, durationMs);
+    case 'lyricsfile': return stringifyLyricsFile(exportCues, durationMs, {metadata});
     case 'txt': return stringifyTXT(exportCues);
     case 'audacity': return stringifyAudacity(exportCues, false);
     default: return '';
   }
 }
 
-function stringifyLyricsFile(cues, durationMs) {
-  let yaml = `version: "1.0"\nmetadata:\n  title: ""\n  artist: ""\n  instrumental: false\n  album: ""\n  duration_ms: ${Math.round(durationMs || 0)}\nlines:\n`;
+function stringifyLyricsFile(cues, durationMs, options = {}) {
+  const metadata = options.metadata || {};
+  let yaml = `version: "1.0"\nmetadata:\n`;
+  yaml += `  title: "${(metadata.title || "").replace(/"/g, '\\"')}"\n`;
+  yaml += `  artist: "${(metadata.artist || "").replace(/"/g, '\\"')}"\n`;
+  yaml += `  album: "${(metadata.album || "").replace(/"/g, '\\"')}"\n`;
+  yaml += `  language: "${(metadata.language || "en").replace(/"/g, '\\"')}"\n`;
+  yaml += `  duration_ms: ${Math.round(durationMs || 0)}\n`;
+  if (metadata.by) yaml += `  by: "${metadata.by.replace(/"/g, '\\"')}"\n`;
+  yaml += `lines:\n`;
   cues.forEach(c => {
     const cleanText = c.text.replace(/\s+/g, ' ').trim();
     yaml += `  - text: "${cleanText.replace(/"/g, '\\"')}"\n`;
@@ -911,12 +1344,16 @@ function stringifyLyricsFile(cues, durationMs) {
         if (i < c.words.length - 1 && !txt.endsWith(' ')) txt += ' ';
         yaml += `      - text: "${txt.replace(/"/g, '\\"')}"\n`;
         yaml += `        start_ms: ${Math.round(w.startMs)}\n`;
+        if (w.isBackground) yaml += `        isBackground: true\n`;
+        if (w.agent) yaml += `        agent: "${w.agent}"\n`;
       });
     } else {
       yaml += `      []\n`;
     }
     yaml += `    start_ms: ${Math.round(c.startMs)}\n`;
     yaml += `    end_ms: ${Math.round(c.endMs)}\n`;
+    if (c.isBackground) yaml += `    isBackground: true\n`;
+    if (c.agent) yaml += `    agent: "${c.agent}"\n`;
   });
   yaml += `plain: |-\n`;
   cues.forEach(c => {
