@@ -22,10 +22,10 @@
                 <img src="favicon.svg" alt="Logo" style="width: 24px; height: 24px; filter: drop-shadow(0 0 5px rgba(255,107,0,0.4));"> <span>LyricsEditor</span>
             </div>
             <button class="btn tool-btn" id="btn-load-audio"><i class="fas fa-file-audio"></i> <span>Load Audio</span></button>
-            <input type="file" id="input-audio" accept="audio/*,video/*,.mp3,.wav,.ogg,.m4a,.mp4,.webm,.aif,.aiff" hidden>
+            <input type="file" id="input-audio" accept="audio/*,video/*,.mp3,.wav,.ogg,.m4a,.mp4,.webm,.aif,.aiff" aria-label="Load Audio File" hidden>
             <button class="btn tool-btn" id="btn-load-lyrics"><i class="fas fa-file-alt"></i> <span>Load Lyrics</span></button>
-            <input type="file" id="input-lyrics" accept=".lrc,.srt,.vtt,.txt,.json,.xml,.ttml,.lyricsfile,.srv1,.srv2,.srv3" hidden>
-            <input type="file" id="input-smart-merge" accept=".lrc,.srt,.vtt,.txt,.json,.xml,.ttml,.lyricsfile,.srv1,.srv2,.srv3" hidden>
+            <input type="file" id="input-lyrics" accept=".lrc,.srt,.vtt,.txt,.json,.xml,.ttml,.lyricsfile,.srv1,.srv2,.srv3" aria-label="Load Lyrics File" hidden>
+            <input type="file" id="input-smart-merge" accept=".lrc,.srt,.vtt,.txt,.json,.xml,.ttml,.lyricsfile,.srv1,.srv2,.srv3" aria-label="Load Smart Merge Reference File" hidden>
 
             <!-- Undo / Redo -->
             <button class="icon-btn" id="btn-undo" title="Undo (Ctrl+Z)"><i class="fas fa-undo"></i></button>
@@ -80,7 +80,7 @@
 
             <div class="nudge-group" title="Shift Time: Adjust timings for selected lines or all lines">
                 <button id="btn-nudge-back" class="btn" title="Shift Backward ([)"><i class="fas fa-minus"></i></button>
-                <input type="number" id="nudge-amount" value="100" step="50" title="Shift amount in milliseconds">
+                <input type="number" id="nudge-amount" value="100" step="50" title="Shift amount in milliseconds" aria-label="Shift amount in milliseconds">
                 <button id="btn-nudge-forward" class="btn" title="Shift Forward (])"><i class="fas fa-plus"></i></button>
             </div>
 
@@ -162,7 +162,7 @@
 
                     <div class="search-box" style="width: 140px;">
                         <i class="fas fa-search search-icon-left"></i>
-                        <input type="text" placeholder="Search..." id="search-input" style="padding-right: 30px; padding-left: 30px;">
+                        <input type="text" placeholder="Search..." id="search-input" style="padding-right: 30px; padding-left: 30px;" aria-label="Search lyrics">
                         <i class="fas fa-times" id="search-clear" title="Clear search"></i>
                     </div>
 
@@ -241,7 +241,7 @@
 
         <div class="volume-control">
             <i class="fas fa-volume-up"></i>
-            <input type="range" class="volume-slider" min="0" max="1" step="0.01" value="1" id="volume-slider">
+            <input type="range" class="volume-slider" min="0" max="1" step="0.01" value="1" id="volume-slider" aria-label="Volume slider">
         </div>
         <div class="stats">
             Lines: <span id="stat-lines">0</span> | Words: <span id="stat-words">0</span>
@@ -256,7 +256,7 @@
             <div style="display:flex; gap:8px; align-items:center; margin-bottom:16px;">
                 <button class="btn" id="shift-minus-500">-500ms</button>
                 <button class="btn" id="shift-minus-100">-100ms</button>
-                <input type="number" id="shift-amount" value="0" style="width:100px; padding:8px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:4px; font-family:monospace; text-align:center;">
+                <input type="number" id="shift-amount" value="0" style="width:100px; padding:8px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:4px; font-family:monospace; text-align:center;" aria-label="Shift amount in milliseconds">
                 <button class="btn" id="shift-plus-100">+100ms</button>
                 <button class="btn" id="shift-plus-500">+500ms</button>
             </div>
@@ -272,8 +272,8 @@
         <div class="modal-box">
             <h3>Find & Replace</h3>
             <div style="display:flex; flex-direction:column; gap:12px; margin:16px 0;">
-                <input type="text" id="find-text" placeholder="Find..." style="padding:8px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:4px;">
-                <input type="text" id="replace-text" placeholder="Replace with..." style="padding:8px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:4px;">
+                <input type="text" id="find-text" placeholder="Find..." style="padding:8px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:4px;" aria-label="Find text">
+                <input type="text" id="replace-text" placeholder="Replace with..." style="padding:8px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:4px;" aria-label="Replace with text">
             </div>
             <div style="display:flex; gap:8px; justify-content:flex-end;">
                 <button class="btn" id="fr-cancel">Cancel</button>
@@ -287,7 +287,7 @@
         <div class="modal-box" style="width: 280px; padding: 24px;">
             <h3 style="margin-top:0; display:flex; align-items:center; gap:10px;"><i class="fas fa-hashtag" style="color:var(--accent);"></i> Jump to Line</h3>
             <div style="margin:20px 0; display:flex; align-items:center; gap:12px;">
-                <input type="number" id="jump-line-input" min="1" placeholder="Line #" style="flex:1; height:50px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:8px; font-size:24px; text-align:center; font-family:'JetBrains Mono', monospace; font-weight:600; outline:none; transition:border-color 0.2s;">
+                <input type="number" id="jump-line-input" min="1" placeholder="Line #" style="flex:1; height:50px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:8px; font-size:24px; text-align:center; font-family:'JetBrains Mono', monospace; font-weight:600; outline:none; transition:border-color 0.2s;" aria-label="Line number to jump to">
                 <div style="display:flex; flex-direction:column; gap:4px;">
                     <button class="icon-btn" id="jl-inc" style="width:32px; height:23px; font-size:12px; border:1px solid var(--border); border-radius:4px;" title="Increase Line Number"><i class="fas fa-chevron-up"></i></button>
                     <button class="icon-btn" id="jl-dec" style="width:32px; height:23px; font-size:12px; border:1px solid var(--border); border-radius:4px;" title="Decrease Line Number"><i class="fas fa-chevron-down"></i></button>
@@ -306,7 +306,7 @@
         <div class="modal-box" style="width: 280px; padding: 24px;">
             <h3 style="margin-top:0; display:flex; align-items:center; gap:10px;"><i class="fas fa-italic" style="color:var(--accent);"></i> Jump to Word</h3>
             <div style="margin:20px 0; display:flex; align-items:center; gap:12px;">
-                <input type="number" id="jump-word-input" min="1" placeholder="Word #" style="flex:1; height:50px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:8px; font-size:24px; text-align:center; font-family:'JetBrains Mono', monospace; font-weight:600; outline:none; transition:border-color 0.2s;">
+                <input type="number" id="jump-word-input" min="1" placeholder="Word #" style="flex:1; height:50px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:8px; font-size:24px; text-align:center; font-family:'JetBrains Mono', monospace; font-weight:600; outline:none; transition:border-color 0.2s;" aria-label="Word number to jump to">
                 <div style="display:flex; flex-direction:column; gap:4px;">
                     <button class="icon-btn" id="jw-inc" style="width:32px; height:23px; font-size:12px; border:1px solid var(--border); border-radius:4px;" title="Increase Word Number"><i class="fas fa-chevron-up"></i></button>
                     <button class="icon-btn" id="jw-dec" style="width:32px; height:23px; font-size:12px; border:1px solid var(--border); border-radius:4px;" title="Decrease Word Number"><i class="fas fa-chevron-down"></i></button>
@@ -338,7 +338,7 @@
                 </label>
                 <div style="margin-left: 28px; margin-top: 8px; display:flex; align-items:center; gap:12px;">
                     <div style="display:flex; align-items:center; gap:8px;">
-                        <input type="number" id="split-word-index" value="1" min="1" disabled style="width:60px; height:38px; padding:6px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px; font-size:18px; text-align:center; font-family:monospace; outline:none;">
+                        <input type="number" id="split-word-index" value="1" min="1" disabled style="width:60px; height:38px; padding:6px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px; font-size:18px; text-align:center; font-family:monospace; outline:none;" aria-label="Word index split point">
                         <div style="display:flex; flex-direction:column; gap:4px;">
                             <button class="icon-btn" id="sw-inc" style="width:28px; height:20px; font-size:11px; border:1px solid var(--border); border-radius:4px;" title="Increase"><i class="fas fa-chevron-up"></i></button>
                             <button class="icon-btn" id="sw-dec" style="width:28px; height:20px; font-size:11px; border:1px solid var(--border); border-radius:4px;" title="Decrease"><i class="fas fa-chevron-down"></i></button>
@@ -393,7 +393,7 @@
                     <div>
                         <i class="fas fa-info-circle"></i> Use <b>\</b> for blank words. Use <b>( )</b> for background vocals.
                     </div>
-                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer; color:var(--text-main);" title="If checked, new words will be mapped directly to existing timestamp slots in order, ignoring text similarity.">
+                    <label for="edit-keep-structure" style="display:flex; align-items:center; gap:6px; cursor:pointer; color:var(--text-main);" title="If checked, new words will be mapped directly to existing timestamp slots in order, ignoring text similarity.">
                         <input type="checkbox" id="edit-keep-structure" style="width:14px; height:14px; accent-color:var(--accent);"> Keep Word Timings
                     </label>
                 </div>
@@ -619,31 +619,31 @@
             <div id="metadata-tab-common">
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
                     <div style="display:flex; flex-direction:column; gap:6px;">
-                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Title [ti] / &lt;ttm:title&gt;</label>
+                        <label for="meta-title" style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Title [ti] / &lt;ttm:title&gt;</label>
                         <input type="text" id="meta-title" placeholder="Song Title" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
                     </div>
                     <div style="display:flex; flex-direction:column; gap:6px;">
-                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Artist [ar]</label>
+                        <label for="meta-artist" style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Artist [ar]</label>
                         <input type="text" id="meta-artist" placeholder="Artist Name" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
                     </div>
                     <div style="display:flex; flex-direction:column; gap:6px;">
-                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Album [al]</label>
+                        <label for="meta-album" style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Album [al]</label>
                         <input type="text" id="meta-album" placeholder="Album Name" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
                     </div>
                     <div style="display:flex; flex-direction:column; gap:6px;">
-                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Language [la] / xml:lang</label>
+                        <label for="meta-language" style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Language [la] / xml:lang</label>
                         <input type="text" id="meta-language" placeholder="en, id, ja..." style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
                     </div>
                     <div style="display:flex; flex-direction:column; gap:6px;">
-                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Created By [by]</label>
+                        <label for="meta-by" style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Created By [by]</label>
                         <input type="text" id="meta-by" placeholder="Editor / LRC Creator" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
                     </div>
                     <div style="display:flex; flex-direction:column; gap:6px;">
-                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Lyricist / Author [au]</label>
+                        <label for="meta-author" style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Lyricist / Author [au]</label>
                         <input type="text" id="meta-author" placeholder="Lyricist Name" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
                     </div>
                     <div style="grid-column:1 / -1; display:flex; flex-direction:column; gap:6px;">
-                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Copyright / Comment</label>
+                        <label for="meta-copyright" style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Copyright / Comment</label>
                         <input type="text" id="meta-copyright" placeholder="© 2026 Label" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
                     </div>
                 </div>
@@ -651,11 +651,11 @@
             <div id="metadata-tab-lrc" style="display:none">
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
                     <div style="display:flex; flex-direction:column; gap:6px;">
-                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Offset [offset] (ms)</label>
+                        <label for="meta-offset" style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Offset [offset] (ms)</label>
                         <input type="number" id="meta-offset" value="0" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
                     </div>
                     <div style="display:flex; flex-direction:column; gap:6px;">
-                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Lyricist [au] override</label>
+                        <label for="meta-lyricist" style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Lyricist [au] override</label>
                         <input type="text" id="meta-lyricist" placeholder="Same as Author" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
                     </div>
                 </div>
@@ -664,7 +664,7 @@
                 <div style="display:flex; flex-direction:column; gap:14px;">
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
                         <div style="display:flex; flex-direction:column; gap:6px;">
-                            <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">iTunes Timing Mode</label>
+                            <label for="meta-itunes-timing" style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">iTunes Timing Mode</label>
                             <select id="meta-itunes-timing" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
                                 <option value="Word">Word (default Apple)</option>
                                 <option value="Line">Line</option>
@@ -673,20 +673,20 @@
                             </select>
                         </div>
                         <div style="display:flex; flex-direction:column; gap:6px;">
-                            <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Leading Silence (ms)</label>
+                            <label for="meta-leading-silence" style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Leading Silence (ms)</label>
                             <input type="number" id="meta-leading-silence" value="0" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
                         </div>
                     </div>
                     <div style="display:flex; flex-direction:column; gap:6px;">
-                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Agents - one per line: id|name</label>
+                        <label for="meta-agents" style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Agents - one per line: id|name</label>
                         <textarea id="meta-agents" placeholder="v1|Lead Vocal&#10;v2|Backing Vocal" style="min-height:72px; padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px; font-family:monospace;"></textarea>
                     </div>
                     <div style="display:flex; flex-direction:column; gap:6px;">
-                        <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Songwriters - one per line</label>
+                        <label for="meta-songwriters" style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Songwriters - one per line</label>
                         <textarea id="meta-songwriters" placeholder="John Doe&#10;Jane Smith" style="min-height:72px; padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;"></textarea>
                     </div>
                     <div style="display:flex; gap:12px; align-items:center; background:var(--bg-dark); border:1px solid var(--border); border-radius:8px; padding:10px 12px;">
-                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12px;">
+                        <label for="meta-enable-bg" style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12px;">
                             <input type="checkbox" id="meta-enable-bg" checked style="accent-color:var(--accent);"> Export background vocals as ttm:role="x-bg"
                         </label>
                     </div>
@@ -716,7 +716,7 @@
             <div style="display:flex; flex-direction:column; gap:14px;">
                 <!-- Song Part (itunes:song-part) -->
                 <div style="display:flex; flex-direction:column; gap:6px;">
-                    <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Song Part (itunes:song-part)</label>
+                    <label for="line-attr-song-part" style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Song Part (itunes:song-part)</label>
                     <select id="line-attr-song-part" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
                         <option value="">None</option>
                         <option value="Verse">Verse</option>
@@ -732,25 +732,25 @@
                 </div>
                 <!-- Custom Song Part Input (hidden by default) -->
                 <div id="line-attr-custom-part-wrapper" style="display:none; flex-direction:column; gap:6px;">
-                    <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Custom Song Part Name</label>
+                    <label for="line-attr-custom-part" style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Custom Song Part Name</label>
                     <input type="text" id="line-attr-custom-part" placeholder="e.g. Verse 3, Chorus (Outro)" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
                 </div>
                 <!-- Apply to subsequent lines checkbox -->
                 <div style="display:flex; gap:8px; align-items:center; margin-top:-4px;">
-                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:11.5px; color:var(--text-muted);">
+                    <label for="line-attr-apply-subsequent" style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:11.5px; color:var(--text-muted);">
                         <input type="checkbox" id="line-attr-apply-subsequent" checked style="accent-color:var(--accent);"> Apply to subsequent lines (until next part)
                     </label>
                 </div>
                 <!-- Agent (ttm:agent) -->
                 <div style="display:flex; flex-direction:column; gap:6px;">
-                    <label style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Vocal Agent (ttm:agent)</label>
+                    <label for="line-attr-agent" style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Vocal Agent (ttm:agent)</label>
                     <select id="line-attr-agent" style="padding:9px 12px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); border-radius:6px;">
                         <option value="">None</option>
                     </select>
                 </div>
                 <!-- Background Vocal Role Checkbox -->
                 <div style="display:flex; gap:8px; align-items:center; background:var(--bg-dark); border:1px solid var(--border); border-radius:8px; padding:10px 12px;">
-                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12.5px;">
+                    <label for="line-attr-bg" style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12.5px;">
                         <input type="checkbox" id="line-attr-bg" style="accent-color:var(--accent);"> Background Vocal (ttm:role="x-bg")
                     </label>
                 </div>
