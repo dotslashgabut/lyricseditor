@@ -65,17 +65,18 @@ https://github.com/user-attachments/assets/d695af6c-2de2-4083-954b-ee181cbc72d0
 - LRC (Standard & Enhanced)
 - SRT (SubRip)
 - VTT (WebVTT)
-- TTML (Timed Text Markup Language)
+- TTML (Timed Text Markup Language / Apple iTunes)
 - YouTube XML (SRV1, SRV2, SRV3)
 - YouTube JSON3
+- Bidirectional JSON (.json)
 - LRCLIB (.lyricsfile)
 - Audacity Labels (.txt)
 - Plain Text (.txt)
 
 ### Export
-- **Subtitles**: LRC, SRT, VTT, TTML, Audacity Labels
-- **Karaoke (Word-Level)**: Enhanced LRC, VTT (Words), TTML (Words), YouTube SRV3 (Words), Audacity Labels (Words)
-- **Other**: YouTube SRV1/SRV2/SRV3, JSON, YouTube JSON3, LRCLIB, Plain Text
+- **Subtitles**: LRC, SRT, VTT, TTML, Apple TTML (iTunes), Audacity Labels
+- **Karaoke (Word-Level)**: Enhanced LRC, VTT (Words), TTML (Words), Apple TTML (Words), YouTube SRV3 (Words), Audacity Labels (Words)
+- **Other**: YouTube SRV1/SRV2/SRV3, JSON (Bidirectional), YouTube JSON3, LRCLIB, Plain Text
 
 ## 🎵 Audio Precision & Sync
 
