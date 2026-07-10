@@ -145,6 +145,12 @@ These advanced tools are designed to fix one of the most common issues in lyric 
 
 ## 🌟 What's New
 
+### v0.0.9
+
+- **Parentheses Background Vocal Sync Fix**: Resolved an issue where adding or removing parentheses `( )` in the Edit Text modal did not update the background vocal role (`x-bg`) on the timeline track when words matched identical or LCS tokens.
+- **Isolated Row Drag Boundaries**: Drag boundaries and sibling interactions are now isolated between main vocals and background vocals. Adjusting background vocal blocks no longer bumps into or is constrained by main vocal blocks, allowing them to freely overlap.
+- **Improved Multi-Row Overlap Editing**: Any track containing both main and background vocal words now automatically displays in double rows when hovered or dragged (regardless of whether they already overlap), giving users the immediate visual space to align overlapping parts.
+
 ### v0.0.8
 
 - **Integrated Metadata Editor**: Added a tag editor popup under the Tools dropdown. Allows editing global parameters (Title, Artist, Album, Language, Creator, Lyricist, Copyright, iTunes Timing Mode, Leading Silence, Agent list, and Songwriters).
