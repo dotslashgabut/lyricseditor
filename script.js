@@ -3139,8 +3139,10 @@ $('et-apply').onclick = () => {
             };
         });
 
-    // 1-to-1 bypass if word counts match exactly
-    if (newTokens.length === oldWords.length) {
+    const keepStructure = $('edit-keep-structure').checked;
+
+    // 1-to-1 bypass if word counts match exactly AND Keep Word Timings is checked
+    if (newTokens.length === oldWords.length && keepStructure) {
       const resultWords = oldWords.map((w, i) => {
         const isBg = isBgToken(i);
         return {
@@ -3221,7 +3223,7 @@ $('et-apply').onclick = () => {
       }
     });
 
-    const keepStructure = $('edit-keep-structure').checked;
+    // keepStructure defined at top of handler
 
     function alignChannel(tokens, channelOldWords, isBgChannel) {
       if (tokens.length === 0) return [];
@@ -3242,15 +3244,99 @@ $('et-apply').onclick = () => {
 
       // If lengths match
       if (tokens.length === channelOldWords.length) {
-        return channelOldWords.map((w, i) => {
-          return {
-            ...w,
-            text: (tokens[i].text === '\\') ? "" : tokens[i].text,
-            isBackground: isBgChannel,
-            role: isBgChannel ? 'x-bg' : null,
-            tokenIdx: tokens[i].tokenIdx
-          };
-        });
+        if (keepStructure) {
+          return channelOldWords.map((w, i) => {
+            return {
+              ...w,
+              text: (tokens[i].text === '\\') ? "" : tokens[i].text,
+              isBackground: isBgChannel,
+              role: isBgChannel ? 'x-bg' : null,
+              tokenIdx: tokens[i].tokenIdx
+            };
+          });
+        } else {
+          const usedOld = new Set();
+          const matched = new Array(tokens.length).fill(null);
+
+          tokens.forEach((tObj, i) => {
+            const text = (tObj.text === '\\') ? "" : tObj.text;
+            const matchIdx = channelOldWords.findIndex((ow, idx) =>
+              !usedOld.has(idx) && ow.text.toLowerCase() === text.toLowerCase()
+            );
+            if (matchIdx !== -1) {
+              matched[i] = {
+                text: text,
+                duration: channelOldWords[matchIdx].endMs - channelOldWords[matchIdx].startMs,
+                id: channelOldWords[matchIdx].id,
+                agent: channelOldWords[matchIdx].agent,
+                tokenIdx: tObj.tokenIdx
+              };
+              usedOld.add(matchIdx);
+            }
+          });
+
+          const remainingOld = channelOldWords.filter((_, idx) => !usedOld.has(idx));
+          let remIdx = 0;
+          tokens.forEach((tObj, i) => {
+            if (!matched[i]) {
+              const text = (tObj.text === '\\') ? "" : tObj.text;
+              if (remIdx < remainingOld.length) {
+                matched[i] = {
+                  text: text,
+                  duration: remainingOld[remIdx].endMs - remainingOld[remIdx].startMs,
+                  id: remainingOld[remIdx].id,
+                  agent: remainingOld[remIdx].agent,
+                  tokenIdx: tObj.tokenIdx
+                };
+                remIdx++;
+              } else {
+                matched[i] = {
+                  text: text,
+                  duration: 50,
+                  id: Date.now() + i + Math.random(),
+                  agent: editingLine.agent,
+                  tokenIdx: tObj.tokenIdx
+                };
+              }
+            }
+          });
+
+          // Calculate original gaps in this channel
+          const gaps = [];
+          for (let k = 0; k < channelOldWords.length - 1; k++) {
+            gaps.push(Math.max(0, channelOldWords[k+1].startMs - channelOldWords[k].endMs));
+          }
+
+          // Place matched words sequentially within this channel's span, preserving original gaps
+          const channelStart = channelOldWords[0].startMs;
+          const channelEnd = channelOldWords[channelOldWords.length - 1].endMs;
+          const totalSpan = channelEnd - channelStart;
+          const totalDur = matched.reduce((sum, m) => sum + m.duration, 0);
+          const totalGaps = gaps.reduce((sum, g) => sum + g, 0);
+
+          let cursor = channelStart;
+          const resultWords = matched.map((m, i) => {
+            const scale = (totalSpan - totalGaps > 0 && totalDur > 0) ? (totalSpan - totalGaps) / totalDur : 1;
+            const dur = m.duration * scale;
+            const word = {
+              id: m.id,
+              text: m.text,
+              startMs: Math.round(cursor),
+              endMs: Math.round(cursor + dur),
+              isBackground: isBgChannel,
+              role: isBgChannel ? 'x-bg' : null,
+              agent: m.agent,
+              tokenIdx: m.tokenIdx
+            };
+            cursor = word.endMs;
+            if (i < gaps.length) {
+              cursor += gaps[i];
+            }
+            return word;
+          });
+          resultWords[resultWords.length - 1].endMs = channelEnd;
+          return resultWords;
+        }
       }
 
       // If keepStructure is true but lengths differ
