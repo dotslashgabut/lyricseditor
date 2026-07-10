@@ -306,7 +306,8 @@ function renderTimeline() {
       }
       return false;
     }
-    const hasOverlaps = hasBgWords && checkOverlap(line.words);
+    const hasMainWords = line.words && line.words.some(w => !w.isBackground && w.role !== 'x-bg');
+    const hasOverlaps = hasBgWords && (checkOverlap(line.words) || hasMainWords);
     const isBgLine = line.isBackground || line.role === 'x-bg' || hasBgWords;
     tr.className = 'timeline-track' + (isBgLine ? ' bg-line' : '') + (hasOverlaps ? ' has-overlapping-words' : '') + (line.agent ? ` agent-${line.agent}` : '');
     tr.id = `tc-${line.id}`;
@@ -488,17 +489,25 @@ function bindDrag(el, word, line, tc, isPl = false) {
   let mode=null, sx=0, snap={}, hasDragged=false;
   const MIN=20; // 20ms min
 
-  function getIdx(){return line.words.findIndex(w=>w.id===word.id);}
+  const isBg = !!(word.isBackground || word.role === 'x-bg');
+  function getSiblings() {
+    if (isPl) return [];
+    return line.words
+      .filter(w => !w.isPl && (!!(w.isBackground || w.role === 'x-bg') === isBg))
+      .sort((a, b) => a.startMs - b.startMs);
+  }
+  function getIdx(siblings){return siblings.findIndex(w=>w.id===word.id);}
   function capture(){
     if (isPl) {
       snap = { i: -1, s: line.startMs, e: line.endMs, lineStartMs: line.startMs, lineEndMs: line.endMs };
       return;
     }
-    const i=getIdx();
+    const siblings = getSiblings();
+    const i=getIdx(siblings);
     snap={i, s:word.startMs, e:word.endMs,
       lineStartMs: line.startMs, lineEndMs: line.endMs,
-      ps:i>0?line.words[i-1].startMs:null, pe:i>0?line.words[i-1].endMs:null,
-      ns:i<line.words.length-1?line.words[i+1].startMs:null, ne:i<line.words.length-1?line.words[i+1].endMs:null};
+      ps:i>0?siblings[i-1].startMs:null, pe:i>0?siblings[i-1].endMs:null,
+      ns:i<siblings.length-1?siblings[i+1].startMs:null, ne:i<siblings.length-1?siblings[i+1].endMs:null};
   }
 
   lh.onpointerdown=e=>{mode='rl';sx=e.clientX;hasDragged=false;capture();e.stopPropagation();el.setPointerCapture(e.pointerId); const tr=el.closest('.timeline-track'); if(tr)tr.classList.add('is-dragging');};
@@ -512,7 +521,11 @@ function bindDrag(el, word, line, tc, isPl = false) {
     if(!tw)return;
     const ld=snap.lineEndMs-snap.lineStartMs;
     let dt=Math.round((e.clientX-sx)/tw*ld);
-    const i=snap.i, prev=i>0?line.words[i-1]:null, next=i<line.words.length-1?line.words[i+1]:null;
+    
+    const siblings = getSiblings();
+    const i=getIdx(siblings);
+    const prev=i>0?siblings[i-1]:null;
+    const next=i<siblings.length-1?siblings[i+1]:null;
 
     const lineIdx = lines.indexOf(line);
     const prevLine = lineIdx > 0 ? lines[lineIdx - 1] : null;
@@ -540,8 +553,10 @@ function bindDrag(el, word, line, tc, isPl = false) {
     }
 
     if(!isPl) {
-      if(!prev) line.startMs = word.startMs;
-      if(!next) line.endMs = word.endMs;
+      const allStarts = line.words.map(w => w.startMs);
+      const allEnds = line.words.map(w => w.endMs);
+      if (allStarts.length > 0) line.startMs = Math.min(...allStarts);
+      if (allEnds.length > 0) line.endMs = Math.max(...allEnds);
       line.words.forEach(w => posWord(document.getElementById(`w-${w.id}`), w, line));
     } else {
       line.startMs = word.startMs;
@@ -3134,13 +3149,14 @@ $('et-apply').onclick = () => {
 
             resultWords = matched.map((m, i) => {
                 const dur = (totalDur > 0) ? (m.duration / totalDur) * totalSpan : totalSpan / matched.length;
+                const isBg = isBgToken(i);
                 const word = {
                     id: m.id,
                     text: m.text,
                     startMs: Math.round(cursor),
                     endMs: Math.round(cursor + dur),
-                    isBackground: m.isBackground,
-                    role: m.role,
+                    isBackground: isBg,
+                    role: isBg ? 'x-bg' : null,
                     agent: m.agent
                 };
                 cursor = word.endMs;
@@ -3238,9 +3254,12 @@ $('et-apply').onclick = () => {
 
         // Add current anchor if it's real
         if (curr.oldIdx !== -1) {
+            const isBg = isBgToken(curr.newIdx);
             resultWords.push({
                 ...oldWords[curr.oldIdx],
-                text: (newTokens[curr.newIdx] === "\\") ? "" : newTokens[curr.newIdx]
+                text: (newTokens[curr.newIdx] === "\\") ? "" : newTokens[curr.newIdx],
+                isBackground: isBg,
+                role: isBg ? 'x-bg' : null
             });
         }
 
