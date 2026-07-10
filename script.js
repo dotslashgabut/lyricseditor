@@ -531,25 +531,80 @@ function bindDrag(el, word, line, tc, isPl = false) {
     const prevLine = lineIdx > 0 ? lines[lineIdx - 1] : null;
     const nextLine = lineIdx < lines.length - 1 ? lines[lineIdx + 1] : null;
 
+    // Snapping: Find snap target times from the opposite channel words in the same line
+    const oppositeWords = line.words.filter(w => !w.isPl && (!!(w.isBackground || w.role === 'x-bg') !== isBg));
+    const snapTargets = [];
+    oppositeWords.forEach(w => {
+      snapTargets.push(w.startMs);
+      snapTargets.push(w.endMs);
+    });
+
+    const isPrevAdjacent = prev && Math.abs(snap.s - snap.pe) <= 1;
+    const isNextAdjacent = next && Math.abs(snap.ns - snap.e) <= 1;
+
     if(mode==='drag'){
-      let mxR=next?(snap.ne-snap.ns-MIN):(nextLine ? nextLine.startMs - snap.e : (duration > 0 ? duration - snap.e : 9999999));
-      let mxL=prev?-(snap.pe-snap.ps-MIN):-(snap.s-(prevLine ? prevLine.endMs : 0));
+      let mxL = prev ? (isPrevAdjacent ? -((snap.pe - snap.ps) - MIN) : -((snap.s - snap.pe) - MIN)) : -(snap.s - (prevLine ? prevLine.endMs : 0));
+      let mxR = next ? (isNextAdjacent ? (snap.ne - snap.ns) - MIN : (snap.ns - snap.e) - MIN) : (nextLine ? nextLine.startMs - snap.e : (duration > 0 ? duration - snap.e : 9999999));
       dt=Math.max(mxL,Math.min(mxR,dt));
+
+      // Apply snap to drag (checks start or end)
+      let tempStart = snap.s + dt;
+      let snapped = false;
+      for (let target of snapTargets) {
+        if (Math.abs(tempStart - target) < 30) {
+          dt = target - snap.s;
+          snapped = true;
+          break;
+        }
+      }
+      if (!snapped) {
+        let tempEnd = snap.e + dt;
+        for (let target of snapTargets) {
+          if (Math.abs(tempEnd - target) < 30) {
+            dt = target - snap.e;
+            break;
+          }
+        }
+      }
+      dt=Math.max(mxL,Math.min(mxR,dt)); // Re-clamp
+
       word.startMs=snap.s+dt; word.endMs=snap.e+dt;
-      if(prev){prev.endMs=snap.pe+dt;}
-      if(next){next.startMs=snap.ns+dt;}
+      if(prev && isPrevAdjacent){prev.endMs=snap.pe+dt;}
+      if(next && isNextAdjacent){next.startMs=snap.ns+dt;}
     } else if(mode==='rr'){
-      let mxR=next?(snap.ne-snap.ns-MIN):(nextLine ? nextLine.startMs - snap.e : (duration > 0 ? duration - snap.e : 9999999));
-      let mxL=-(snap.e-snap.s-MIN);
+      let mxL = -((snap.e - snap.s) - MIN);
+      let mxR = next ? (isNextAdjacent ? (snap.ne - snap.ns) - MIN : (snap.ns - snap.e) - MIN) : (nextLine ? nextLine.startMs - snap.e : (duration > 0 ? duration - snap.e : 9999999));
       dt=Math.max(mxL,Math.min(mxR,dt));
+
+      // Apply snap to resize right
+      let tempEnd = snap.e + dt;
+      for (let target of snapTargets) {
+        if (Math.abs(tempEnd - target) < 30) {
+          dt = target - snap.e;
+          break;
+        }
+      }
+      dt=Math.max(mxL,Math.min(mxR,dt)); // Re-clamp
+
       word.endMs=snap.e+dt;
-      if(next){next.startMs=snap.ns+dt;}
+      if(next && isNextAdjacent){next.startMs=snap.ns+dt;}
     } else if(mode==='rl'){
-      let mxR=snap.e-snap.s-MIN;
-      let mxL=prev?-(snap.pe-snap.ps-MIN):-(snap.s-(prevLine ? prevLine.endMs : 0));
+      let mxL = prev ? (isPrevAdjacent ? -((snap.pe - snap.ps) - MIN) : -((snap.s - snap.pe) - MIN)) : -(snap.s - (prevLine ? prevLine.endMs : 0));
+      let mxR = (snap.e - snap.s) - MIN;
       dt=Math.max(mxL,Math.min(mxR,dt));
+
+      // Apply snap to resize left
+      let tempStart = snap.s + dt;
+      for (let target of snapTargets) {
+        if (Math.abs(tempStart - target) < 30) {
+          dt = target - snap.s;
+          break;
+        }
+      }
+      dt=Math.max(mxL,Math.min(mxR,dt)); // Re-clamp
+
       word.startMs=snap.s+dt;
-      if(prev){prev.endMs=snap.pe+dt;}
+      if(prev && isPrevAdjacent){prev.endMs=snap.pe+dt;}
     }
 
     if(!isPl) {
@@ -574,8 +629,21 @@ function bindDrag(el, word, line, tc, isPl = false) {
     }
 
     const tr = document.getElementById(`tc-${line.id}`);
-    tr.querySelector('.track-info').textContent = fmt(line.startMs/1000);
-    tr.querySelector('.track-end-time').textContent = fmt(line.endMs/1000);
+    if (tr) {
+      const timeStartDiv = tr.querySelector('.track-info > div:first-child');
+      if (timeStartDiv) timeStartDiv.textContent = fmt(line.startMs/1000);
+      else {
+        const infoEl = tr.querySelector('.track-info');
+        if (infoEl) infoEl.textContent = fmt(line.startMs/1000);
+      }
+
+      const timeEndDiv = tr.querySelector('.track-end-time > div:first-child');
+      if (timeEndDiv) timeEndDiv.textContent = fmt(line.endMs/1000);
+      else {
+        const endTimeEl = tr.querySelector('.track-end-time');
+        if (endTimeEl) endTimeEl.textContent = fmt(line.endMs/1000);
+      }
+    }
   });
 
   document.addEventListener('pointerup', ()=>{
@@ -3058,6 +3126,7 @@ $('et-apply').onclick = () => {
       }
       return !!editingLine.isBackground;
     }
+
     const oldWords = (editingLine.words && editingLine.words.length > 0)
         ? editingLine.words
         : editingLine.text.trim().split(/\s+/).filter(t => t).map((t, i, arr) => {
@@ -3070,292 +3139,312 @@ $('et-apply').onclick = () => {
             };
         });
 
+    // 1-to-1 bypass if word counts match exactly
+    if (newTokens.length === oldWords.length) {
+      const resultWords = oldWords.map((w, i) => {
+        const isBg = isBgToken(i);
+        return {
+          ...w,
+          text: (newTokens[i] === '\\') ? "" : newTokens[i],
+          isBackground: isBg,
+          role: isBg ? 'x-bg' : null,
+          tokenIdx: i
+        };
+      });
+
+      editingLine.words = resultWords;
+      editingLine.text = resultWords.map(w => w.text).join(' ').replace(/\s+/g, ' ').trim();
+      pushHistory(); renderTimeline();
+      $('edit-text-modal').style.display = 'none';
+      editingLine = null;
+      return;
+    }
+
+    // Compute default sequential timings for newly introduced channels/words
+    const defaultP = (editingLine.endMs - editingLine.startMs) / newTokens.length;
+    const defaultTimings = newTokens.map((t, i) => ({
+      startMs: Math.round(editingLine.startMs + defaultP * i),
+      endMs: Math.round(editingLine.startMs + defaultP * (i + 1))
+    }));
+
+    // Classify new tokens into Main and Background channels with default timing fallbacks
+    const mainTokens = [];
+    const bgTokens = [];
+    newTokens.forEach((t, i) => {
+      const tObj = {
+        text: t,
+        tokenIdx: i,
+        defaultStartMs: defaultTimings[i].startMs,
+        defaultEndMs: defaultTimings[i].endMs
+      };
+      if (isBgToken(i)) {
+        bgTokens.push(tObj);
+      } else {
+        mainTokens.push(tObj);
+      }
+    });
+
+    // Clean text helper for matching words between channels
+    function cleanTextForMatch(txt) {
+      return (txt || "").replace(/[\(\)]/g, '').toLowerCase().trim();
+    }
+
+    // Classify old words by matching them to the new tokens' target channels
+    const oldMainWords = [];
+    const oldBgWords = [];
+    const usedTokenIdxs = new Set();
+
+    oldWords.forEach(w => {
+      const wClean = cleanTextForMatch(w.text);
+      let matchedIdx = -1;
+      for (let j = 0; j < newTokens.length; j++) {
+        if (!usedTokenIdxs.has(j) && cleanTextForMatch(newTokens[j]) === wClean) {
+          matchedIdx = j;
+          break;
+        }
+      }
+
+      if (matchedIdx !== -1) {
+        usedTokenIdxs.add(matchedIdx);
+        if (isBgToken(matchedIdx)) {
+          oldBgWords.push(w);
+        } else {
+          oldMainWords.push(w);
+        }
+      } else {
+        // Fallback for deleted words: place in their original channel
+        if (w.isBackground || w.role === 'x-bg') {
+          oldBgWords.push(w);
+        } else {
+          oldMainWords.push(w);
+        }
+      }
+    });
+
     const keepStructure = $('edit-keep-structure').checked;
 
-    // 1. Case: Word counts match
-    if (newTokens.length === oldWords.length) {
-        let resultWords;
-
-        if (keepStructure) {
-            // ON: Sequential â€” slot N keeps its timestamp, text changes
-            resultWords = oldWords.map((w, i) => {
-                const isBg = isBgToken(i);
-                return {
-                    ...w,
-                    text: (newTokens[i] === '\\') ? "" : newTokens[i],
-                    isBackground: isBg,
-                    role: isBg ? 'x-bg' : null
-                };
-            });
-        } else {
-            // OFF (default): Smart â€” words carry their DURATION to new positions
-            const usedOld = new Set();
-            const matched = new Array(newTokens.length).fill(null);
-
-            // First pass: Match identical words (case-insensitive)
-            newTokens.forEach((t, i) => {
-                const text = (t === '\\') ? "" : t;
-                const matchIdx = oldWords.findIndex((ow, idx) =>
-                    !usedOld.has(idx) && ow.text.toLowerCase() === text.toLowerCase()
-                );
-                if (matchIdx !== -1) {
-                    matched[i] = {
-                        text: text,
-                        duration: oldWords[matchIdx].endMs - oldWords[matchIdx].startMs,
-                        id: oldWords[matchIdx].id,
-                        isBackground: oldWords[matchIdx].isBackground,
-                        role: oldWords[matchIdx].role,
-                        agent: oldWords[matchIdx].agent
-                    };
-                    usedOld.add(matchIdx);
-                }
-            });
-
-            // Second pass: Fill unmatched with remaining old words' durations
-            const remainingOld = oldWords.filter((_, idx) => !usedOld.has(idx));
-            let remIdx = 0;
-            newTokens.forEach((t, i) => {
-                if (!matched[i]) {
-                    const text = (t === '\\') ? "" : t;
-                    if (remIdx < remainingOld.length) {
-                        matched[i] = {
-                            text: text,
-                            duration: remainingOld[remIdx].endMs - remainingOld[remIdx].startMs,
-                            id: remainingOld[remIdx].id,
-                            isBackground: remainingOld[remIdx].isBackground,
-                            role: remainingOld[remIdx].role,
-                            agent: remainingOld[remIdx].agent
-                        };
-                        remIdx++;
-                    } else {
-                        matched[i] = {
-                            text: text,
-                            duration: 50,
-                            id: Date.now() + i,
-                            isBackground: editingLine.isBackground,
-                            role: editingLine.role,
-                            agent: editingLine.agent
-                        };
-                    }
-                }
-            });
-
-            // Place words sequentially, preserving proportional durations
-            const lineStart = oldWords[0].startMs;
-            const lineEnd = oldWords[oldWords.length - 1].endMs;
-            const totalSpan = lineEnd - lineStart;
-            const totalDur = matched.reduce((sum, m) => sum + m.duration, 0);
-            let cursor = lineStart;
-
-            resultWords = matched.map((m, i) => {
-                const dur = (totalDur > 0) ? (m.duration / totalDur) * totalSpan : totalSpan / matched.length;
-                const isBg = isBgToken(i);
-                const word = {
-                    id: m.id,
-                    text: m.text,
-                    startMs: Math.round(cursor),
-                    endMs: Math.round(cursor + dur),
-                    isBackground: isBg,
-                    role: isBg ? 'x-bg' : null,
-                    agent: m.agent
-                };
-                cursor = word.endMs;
-                return word;
-            });
-            // Snap last word to exact line boundary
-            resultWords[resultWords.length - 1].endMs = lineEnd;
-        }
-
-        editingLine.words = resultWords;
-        editingLine.text = resultWords.map(w => w.text).join(' ').replace(/\s+/g, ' ').trim();
-        pushHistory(); renderTimeline();
-        $('edit-text-modal').style.display = 'none'; editingLine = null;
-        return;
-    }
-
-    if (keepStructure) {
-        const resultWords = [];
-        newTokens.forEach((t, i) => {
-            const isBg = isBgToken(i);
-            const text = (t === '\\') ? "" : t;
-            if (i < oldWords.length) {
-                resultWords.push({ 
-                    ...oldWords[i], 
-                    text: text,
-                    isBackground: isBg,
-                    role: isBg ? 'x-bg' : null
-                });
-            } else {
-                const last = resultWords[resultWords.length - 1];
-                const start = last ? last.endMs : (oldWords.length ? oldWords[oldWords.length-1].endMs : editingLine.startMs);
-                resultWords.push({ 
-                    id: Date.now() + i, 
-                    text: text, 
-                    startMs: start, 
-                    endMs: Math.max(start + 100, editingLine.endMs),
-                    isBackground: isBg,
-                    role: isBg ? 'x-bg' : null,
-                    agent: editingLine.agent
-                });
-            }
+    function alignChannel(tokens, channelOldWords, isBgChannel) {
+      if (tokens.length === 0) return [];
+      if (channelOldWords.length === 0) {
+        return tokens.map((tObj, i) => {
+          return {
+            id: `tmp-${Date.now()}-${isBgChannel ? 'bg' : 'main'}-${i}-${Math.random()}`,
+            text: (tObj.text === '\\') ? "" : tObj.text,
+            startMs: tObj.defaultStartMs,
+            endMs: tObj.defaultEndMs,
+            isBackground: isBgChannel,
+            role: isBgChannel ? 'x-bg' : null,
+            agent: editingLine.agent,
+            tokenIdx: tObj.tokenIdx
+          };
         });
-        for (let i = newTokens.length; i < oldWords.length; i++) {
-            resultWords.push({ 
-                ...oldWords[i], 
-                text: "",
-                isBackground: oldWords[i].isBackground,
-                role: oldWords[i].role
-            });
-        }
-        editingLine.words = resultWords;
-        editingLine.text = resultWords.map(w => w.text).join(' ').replace(/\s+/g, ' ').trim();
-        pushHistory(); renderTimeline();
-        $('edit-text-modal').style.display = 'none'; editingLine = null;
-        return;
-    }
+      }
 
-    // 3. Case: Smart Alignment (LCS - Different word counts)
-    function getLCS(arr1, arr2) {
+      // If lengths match
+      if (tokens.length === channelOldWords.length) {
+        return channelOldWords.map((w, i) => {
+          return {
+            ...w,
+            text: (tokens[i].text === '\\') ? "" : tokens[i].text,
+            isBackground: isBgChannel,
+            role: isBgChannel ? 'x-bg' : null,
+            tokenIdx: tokens[i].tokenIdx
+          };
+        });
+      }
+
+      // If keepStructure is true but lengths differ
+      if (keepStructure) {
+        const resultWords = [];
+        tokens.forEach((tObj, i) => {
+          const text = (tObj.text === '\\') ? "" : tObj.text;
+          if (i < channelOldWords.length) {
+            resultWords.push({ 
+              ...channelOldWords[i], 
+              text: text,
+              isBackground: isBgChannel,
+              role: isBgChannel ? 'x-bg' : null,
+              tokenIdx: tObj.tokenIdx
+            });
+          } else {
+            const last = resultWords[resultWords.length - 1];
+            const start = last ? last.endMs : (channelOldWords.length ? channelOldWords[channelOldWords.length-1].endMs : editingLine.startMs);
+            resultWords.push({ 
+              id: Date.now() + i + Math.random(), 
+              text: text, 
+              startMs: start, 
+              endMs: Math.max(start + 100, editingLine.endMs),
+              isBackground: isBgChannel,
+              role: isBgChannel ? 'x-bg' : null,
+              agent: editingLine.agent,
+              tokenIdx: tObj.tokenIdx
+            });
+          }
+        });
+        for (let i = tokens.length; i < channelOldWords.length; i++) {
+          resultWords.push({ 
+            ...channelOldWords[i], 
+            text: "",
+            isBackground: isBgChannel,
+            role: isBgChannel ? 'x-bg' : null,
+            tokenIdx: tokens[tokens.length - 1] ? tokens[tokens.length - 1].tokenIdx + 0.1 * (i - tokens.length + 1) : i
+          });
+        }
+        return resultWords;
+      }
+
+      // Smart Alignment (LCS)
+      function getLCS(arr1, arr2) {
         const n = arr1.length, m = arr2.length;
         const dp = Array.from({length: n+1}, () => Array(m+1).fill(0));
         for (let i=1; i<=n; i++) {
-            for (let j=1; j<=m; j++) {
-                const w1 = arr1[i-1].text.toLowerCase();
-                const w2 = arr2[j-1].toLowerCase();
-                const isMatch = (w1 === w2) || (w1 === "" && (w2 === "\\"));
-                if (isMatch) dp[i][j] = dp[i-1][j-1] + 1;
-                else dp[i][j] = Math.max(dp[i-1][j], dp[i][j-1]);
-            }
+          for (let j=1; j<=m; j++) {
+            const w1 = arr1[i-1].text.toLowerCase();
+            const w2 = arr2[j-1].text.toLowerCase();
+            const isMatch = (w1 === w2) || (w1 === "" && (w2 === "\\"));
+            if (isMatch) dp[i][j] = dp[i-1][j-1] + 1;
+            else dp[i][j] = Math.max(dp[i-1][j], dp[i][j-1]);
+          }
         }
         const res = []; let i=n, j=m;
         while (i>0 && j>0) {
-            const w1 = arr1[i-1].text.toLowerCase();
-            const w2 = arr2[j-1].toLowerCase();
-            const isMatch = (w1 === w2) || (w1 === "" && (w2 === "\\"));
-            if (isMatch) {
-                res.unshift({oldIdx: i-1, newIdx: j-1}); i--; j--;
-            } else if (dp[i-1][j] > dp[i][j-1]) i--; else j--;
+          const w1 = arr1[i-1].text.toLowerCase();
+          const w2 = arr2[j-1].text.toLowerCase();
+          const isMatch = (w1 === w2) || (w1 === "" && (w2 === "\\"));
+          if (isMatch) {
+            res.unshift({oldIdx: i-1, newIdx: j-1}); i--; j--;
+          } else if (dp[i-1][j] > dp[i][j-1]) i--; else j--;
         }
         return res;
-    }
+      }
 
-    const anchors = getLCS(oldWords, newTokens);
-    const resultWords = [];
+      const anchors = getLCS(channelOldWords, tokens);
+      const resultWords = [];
 
-    // Add virtual anchors at start/end
-    const fullAnchors = [
-        {oldIdx: -1, newIdx: -1, endMs: editingLine.startMs},
-        ...anchors.map(a => ({...a, startMs: oldWords[a.oldIdx].startMs, endMs: oldWords[a.oldIdx].endMs})),
-        {oldIdx: oldWords.length, newIdx: newTokens.length, startMs: editingLine.endMs}
-    ];
+      const channelStart = channelOldWords[0].startMs;
+      const channelEnd = channelOldWords[channelOldWords.length - 1].endMs;
 
-    for (let i = 0; i < fullAnchors.length - 1; i++) {
+      const fullAnchors = [
+        {oldIdx: -1, newIdx: -1, endMs: channelStart},
+        ...anchors.map(a => ({...a, startMs: channelOldWords[a.oldIdx].startMs, endMs: channelOldWords[a.oldIdx].endMs})),
+        {oldIdx: channelOldWords.length, newIdx: tokens.length, startMs: channelEnd}
+      ];
+
+      for (let i = 0; i < fullAnchors.length - 1; i++) {
         const curr = fullAnchors[i], next = fullAnchors[i+1];
 
-        // Add current anchor if it's real
         if (curr.oldIdx !== -1) {
-            const isBg = isBgToken(curr.newIdx);
-            resultWords.push({
-                ...oldWords[curr.oldIdx],
-                text: (newTokens[curr.newIdx] === "\\") ? "" : newTokens[curr.newIdx],
-                isBackground: isBg,
-                role: isBg ? 'x-bg' : null
-            });
+          resultWords.push({
+            ...channelOldWords[curr.oldIdx],
+            text: (tokens[curr.newIdx].text === "\\") ? "" : tokens[curr.newIdx].text,
+            isBackground: isBgChannel,
+            role: isBgChannel ? 'x-bg' : null,
+            tokenIdx: tokens[curr.newIdx].tokenIdx
+          });
         }
 
-        // Process gap between current and next anchor
-        const oldGapStart = curr.oldIdx === -1 ? curr.endMs : oldWords[curr.oldIdx].endMs;
-        const oldGapEnd = next.oldIdx === oldWords.length ? next.startMs : oldWords[next.oldIdx].startMs;
+        const oldGapStart = curr.oldIdx === -1 ? curr.endMs : channelOldWords[curr.oldIdx].endMs;
+        const oldGapEnd = next.oldIdx === channelOldWords.length ? next.startMs : channelOldWords[next.oldIdx].startMs;
 
-        const oldInGap = oldWords.slice(curr.oldIdx + 1, next.oldIdx);
-        const newInGap = newTokens.slice(curr.newIdx + 1, next.newIdx);
+        const oldInGap = channelOldWords.slice(curr.oldIdx + 1, next.oldIdx);
+        const newInGap = tokens.slice(curr.newIdx + 1, next.newIdx);
 
         if (newInGap.length > 0) {
-            if (oldInGap.length > 0) {
-                // If we have both, map them proportionally
-                const spanStart = oldInGap[0].startMs;
-                const spanEnd = oldInGap[oldInGap.length - 1].endMs;
-                const dur = spanEnd - spanStart;
-                const perW = dur / newInGap.length;
-                newInGap.forEach((t, idx) => {
-                    const isBlank = (t === "\\");
-                    const tokenIdx = curr.newIdx + 1 + idx;
-                    const isBg = isBgToken(tokenIdx);
-                    resultWords.push({
-                        id: oldInGap[idx] ? oldInGap[idx].id : (Date.now() + Math.random()),
-                        text: isBlank ? "" : t,
-                        startMs: Math.round(spanStart + perW * idx),
-                        endMs: Math.round(spanStart + perW * (idx + 1)),
-                        isBackground: isBg,
-                        role: isBg ? 'x-bg' : null,
-                        agent: oldInGap[idx] ? oldInGap[idx].agent : editingLine.agent
-                    });
-                });
-            } else {
-                // Pure insertion: Steal space from neighbors (prev and next)
-                const newWordMin = 50;
-                const existingWordMin = 20;
+          if (oldInGap.length > 0) {
+            const spanStart = oldInGap[0].startMs;
+            const spanEnd = oldInGap[oldInGap.length - 1].endMs;
+            const dur = spanEnd - spanStart;
+            const perW = dur / newInGap.length;
+            newInGap.forEach((tObj, idx) => {
+              const isBlank = (tObj.text === "\\");
+              resultWords.push({
+                id: oldInGap[idx] ? oldInGap[idx].id : (Date.now() + Math.random()),
+                text: isBlank ? "" : tObj.text,
+                startMs: Math.round(spanStart + perW * idx),
+                endMs: Math.round(spanStart + perW * (idx + 1)),
+                isBackground: isBgChannel,
+                role: isBgChannel ? 'x-bg' : null,
+                agent: oldInGap[idx] ? oldInGap[idx].agent : editingLine.agent,
+                tokenIdx: tObj.tokenIdx
+              });
+            });
+          } else {
+            const newWordMin = 50;
+            const existingWordMin = 20;
 
-                const minNeeded = newWordMin * newInGap.length;
-                let insertStart = oldGapStart;
-                let insertEnd = oldGapEnd;
-                let available = insertEnd - insertStart;
+            const minNeeded = newWordMin * newInGap.length;
+            let insertStart = oldGapStart;
+            let insertEnd = oldGapEnd;
+            let available = insertEnd - insertStart;
 
-                if (available < minNeeded) {
-                    const toSteal = minNeeded - available;
-                    const prev = resultWords.length > 0 ? resultWords[resultWords.length - 1] : null;
-                    const nWord = next.oldIdx < oldWords.length ? oldWords[next.oldIdx] : null;
+            if (available < minNeeded) {
+              const toSteal = minNeeded - available;
+              const prevWord = resultWords.length > 0 ? resultWords[resultWords.length - 1] : null;
+              const nWord = next.oldIdx < channelOldWords.length ? channelOldWords[next.oldIdx] : null;
 
-                    const prevCap = prev ? Math.max(0, (prev.endMs - prev.startMs) - existingWordMin) : 0;
-                    const nextCap = nWord ? Math.max(0, (nWord.endMs - nWord.startMs) - existingWordMin) : 0;
-                    const totalCap = prevCap + nextCap;
+              const prevCap = prevWord ? Math.max(0, (prevWord.endMs - prevWord.startMs) - existingWordMin) : 0;
+              const nextCap = nWord ? Math.max(0, (nWord.endMs - nWord.startMs) - existingWordMin) : 0;
+              const totalCap = prevCap + nextCap;
 
-                    if (totalCap > 0) {
-                        const prevSteal = (prevCap / totalCap) * toSteal;
-                        const nextSteal = (nextCap / totalCap) * toSteal;
+              if (totalCap > 0) {
+                const prevSteal = (prevCap / totalCap) * toSteal;
+                const nextSteal = (nextCap / totalCap) * toSteal;
 
-                        if (prev) {
-                            prev.endMs -= prevSteal;
-                            insertStart = prev.endMs;
-                        }
-                        if (nWord) {
-                            nWord.startMs += nextSteal;
-                            insertEnd = nWord.startMs;
-                            fullAnchors[i+1].startMs = nWord.startMs;
-                        }
-                    }
+                if (prevWord) {
+                  prevWord.endMs -= prevSteal;
+                  insertStart = prevWord.endMs;
                 }
+                if (nWord) {
+                  nWord.startMs += nextSteal;
+                  insertEnd = nWord.startMs;
+                  fullAnchors[i+1].startMs = nWord.startMs;
+                }
+              }
+            }
 
-                // Recalculate available and perW after stealing
-                available = Math.max(minNeeded, insertEnd - insertStart);
-                const perW = available / newInGap.length;
-                newInGap.forEach((t, idx) => {
-                    const isBlank = (t === "\\");
-                    const tokenIdx = curr.newIdx + 1 + idx;
-                    const isBg = isBgToken(tokenIdx);
-                    resultWords.push({
-                        id: Date.now() + Math.random(),
-                        text: isBlank ? "" : t,
-                        startMs: Math.round(insertStart + perW * idx),
-                        endMs: Math.round(insertStart + perW * (idx + 1)),
-                        isBackground: isBg,
-                        role: isBg ? 'x-bg' : null,
-                        agent: editingLine.agent
-                    });
-                });
-            }
+            available = Math.max(minNeeded, insertEnd - insertStart);
+            const perW = available / newInGap.length;
+            newInGap.forEach((tObj, idx) => {
+              const isBlank = (tObj.text === "\\");
+              resultWords.push({
+                id: Date.now() + Math.random(),
+                text: isBlank ? "" : tObj.text,
+                startMs: Math.round(insertStart + perW * idx),
+                endMs: Math.round(insertStart + perW * (idx + 1)),
+                isBackground: isBgChannel,
+                role: isBgChannel ? 'x-bg' : null,
+                agent: editingLine.agent,
+                tokenIdx: tObj.tokenIdx
+              });
+            });
+          }
         } else if (oldInGap.length > 0) {
-            // Words were deleted in the text modal.
-            // Merge their duration into the preceding word (curr or last in resultWords)
-            const lastWord = resultWords.length > 0 ? resultWords[resultWords.length - 1] : null;
-            if (lastWord) {
-                lastWord.endMs = oldInGap[oldInGap.length - 1].endMs;
-            } else if (next.oldIdx < oldWords.length) {
-                // If no previous word, expand the next anchor's start
-                oldWords[next.oldIdx].startMs = oldGapStart;
-                fullAnchors[i+1].startMs = oldGapStart;
-            }
+          const lastWord = resultWords.length > 0 ? resultWords[resultWords.length - 1] : null;
+          if (lastWord) {
+            lastWord.endMs = oldInGap[oldInGap.length - 1].endMs;
+          } else if (next.oldIdx < channelOldWords.length) {
+            channelOldWords[next.oldIdx].startMs = oldGapStart;
+            fullAnchors[i+1].startMs = oldGapStart;
+          }
         }
+      }
+
+      return resultWords;
+    }
+
+    const alignedMain = alignChannel(mainTokens, oldMainWords, false);
+    const alignedBg = alignChannel(bgTokens, oldBgWords, true);
+
+    const resultWords = [...alignedMain, ...alignedBg].sort((a, b) => {
+      if (a.startMs !== b.startMs) return a.startMs - b.startMs;
+      return a.tokenIdx - b.tokenIdx;
+    });
+
+    if (resultWords.length > 0) {
+      const allStarts = resultWords.map(w => w.startMs);
+      const allEnds = resultWords.map(w => w.endMs);
+      editingLine.startMs = Math.min(...allStarts);
+      editingLine.endMs = Math.max(...allEnds);
     }
 
     editingLine.words = resultWords;
