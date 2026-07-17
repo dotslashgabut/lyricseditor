@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="metadata-styles.css">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
 </head>
 
@@ -93,9 +93,7 @@
             <!-- Hot Fix (one-click) -->
             <button class="btn tool-btn" id="btn-hotfix" title="Hot Fix: compact whitespace + remove empty + fill gaps"><i class="fas fa-bolt"></i> <span>Hot Fix</span></button>
         </div>
-        <div class="toolbar-center">
-            <!-- Search box moved to timeline header -->
-        </div>
+        <div class="toolbar-center" aria-hidden="true"></div>
         <div class="toolbar-right">
             <div class="view-mode-toggle">
                 <button class="btn toggle-btn active" id="view-one-line" title="Default View (D)"><i class="fas fa-list"></i></button>
@@ -157,18 +155,19 @@
                 <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
                     <label for="check-all-lines" style="display:flex; align-items:center; cursor:pointer; color:var(--text-main);">
                         <input type="checkbox" id="check-all-lines" style="margin-right:6px; cursor:pointer;">
-                        Select All / None
+                        <span id="check-all-label">Select All / None</span>
                     </label>
 
                     <div class="search-box" style="width: 140px;">
                         <i class="fas fa-search search-icon-left"></i>
                         <input type="text" placeholder="Search..." id="search-input" style="padding-right: 30px; padding-left: 30px;" aria-label="Search lyrics">
                         <i class="fas fa-times" id="search-clear" title="Clear search"></i>
+                        <span id="search-count" title="Matching lines" style="display:none;"></span>
                     </div>
 
                     <div class="header-action-btns" style="display:flex; gap:8px; align-items:center;">
                         <button class="btn tool-btn" id="btn-add-line-header" style="padding: 4px 10px; font-size: 11px;"><i class="fas fa-plus"></i> <span>Add New Line</span></button>
-                        <button class="btn tool-btn" id="btn-delete-selected" style="padding: 4px 10px; font-size: 11px; color: #ff4d4f; border-color: rgba(255, 77, 79, 0.2);" title="Delete selected lines"><i class="fas fa-trash-alt"></i> <span>Delete Selected</span></button>
+                        <button class="btn tool-btn" id="btn-delete-selected" style="padding: 4px 10px; font-size: 11px; color: #ff4d4f; border-color: rgba(255, 77, 79, 0.2);" title="Delete selected lines"><i class="fas fa-trash-alt"></i> <span id="delete-selected-label">Delete Selected</span></button>
                         <button class="btn tool-btn" id="btn-clear-all-header" style="padding: 4px 10px; font-size: 11px; color: #ff4d4f; border-color: rgba(255, 77, 79, 0.2);" title="Delete all lines and reset timeline"><i class="fas fa-times-circle"></i> <span>Clear All</span></button>
                         <button class="btn tool-btn" id="btn-reset-session-header" style="padding: 4px 10px; font-size: 11px; color: #ff4d4f; border-color: rgba(255, 77, 79, 0.2);" title="Clear session and reload page"><i class="fas fa-broom"></i> <span>Reset Session</span></button>
                         
@@ -233,10 +232,12 @@
 
         <div class="time-display" id="time-display">00:00.00 / 00:00.00</div>
 
-        <div class="progress-bar-container">
+        <div class="progress-bar-container" id="progress-container">
             <div class="progress-bar" id="progress-bar">
                 <div class="progress-fill" id="progress-fill"></div>
+                <div class="progress-knob" id="progress-knob"></div>
             </div>
+            <div class="progress-tooltip" id="progress-tooltip">00:00.000</div>
         </div>
 
         <div class="volume-control">
@@ -761,6 +762,18 @@
             </div>
         </div>
     </div>
+
+    <!-- Drag & Drop Overlay -->
+    <div class="drop-overlay" id="drop-overlay" aria-hidden="true">
+        <div class="drop-overlay-box">
+            <i class="fas fa-cloud-upload-alt"></i>
+            <div class="drop-overlay-title">Drop files to load</div>
+            <div class="drop-overlay-sub">Audio (MP3, WAV, FLAC…) or Lyrics (LRC, SRT, VTT, TTML…)</div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toast-container" aria-live="polite"></div>
 
     <script src="parser.js"></script>
     <script src="metadata-editor.js"></script>
