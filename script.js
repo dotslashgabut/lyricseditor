@@ -48,11 +48,51 @@ let history = [{lines:[], audioFN:'', lyricsFN:'', audioFull:'', lyricsFull:'', 
 let lastImportFormat = 'lrc', audioFilename = '', lyricsFilename = '', originalFilename = 'lyrics', editingLine = null;
 let audioBuffer = null, waveformCache = new Map(), waveformObserver = null;
 let smartToolMode = 'merge'; // 'merge', 'replace', or 'combined'
+let trackEls = {}; // lineId -> {tr, pi, wordEls} cache, rebuilt each render
+let lastRenderedActiveId = null, lastRenderedPlaying = false;
 
 const $ = id => document.getElementById(id);
 const playBtn=$('btn-play-pause'), stopBtn=$('btn-stop'), repeatBtn=$('btn-repeat');
 const timeDisp=$('time-display'), progFill=$('progress-fill'), volSlider=$('volume-slider');
 const container=$('timeline-container'), statL=$('stat-lines'), statW=$('stat-words');
+
+// ── Utilities ──
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Toast notifications (non-blocking replacement for alert())
+const TOAST_ICONS = { info: 'fa-info-circle', success: 'fa-check-circle', warning: 'fa-exclamation-triangle', error: 'fa-times-circle' };
+function showToast(msg, type = 'info', duration = 2800) {
+  let box = $('toast-container');
+  if (!box) { alert(msg); return; }
+  const t = document.createElement('div');
+  t.className = `toast toast-${type}`;
+  t.innerHTML = `<i class="fas ${TOAST_ICONS[type] || TOAST_ICONS.info}"></i><span>${escapeHtml(msg)}</span>`;
+  box.appendChild(t);
+  while (box.children.length > 4) box.firstChild.remove();
+  setTimeout(() => {
+    t.classList.add('toast-out');
+    setTimeout(() => t.remove(), 260);
+  }, duration);
+}
+window.showToast = showToast;
+
+// Small persisted preferences (separate from session/history)
+const PREFS_KEY = 'lyricseditor_prefs';
+function loadPrefs() {
+  try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; } catch(e) { return {}; }
+}
+function savePrefs(patch) {
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify({ ...loadPrefs(), ...patch })); } catch(e) {}
+}
+
+// Modal helpers
+function closeAllModals() {
+  document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none');
+}
 
 function fmt(s) {
   if(isNaN(s))return'00:00.000';
@@ -86,6 +126,13 @@ function pushHistory() {
   if (history.length > 50) history.shift();
   histIdx = history.length - 1;
   saveSession();
+  updateUndoRedoUI();
+}
+
+function updateUndoRedoUI() {
+  const u = $('btn-undo'), r = $('btn-redo');
+  if (u) u.disabled = histIdx <= 0;
+  if (r) r.disabled = histIdx >= history.length - 1;
 }
 
 function saveSession() {
@@ -216,10 +263,11 @@ function applySnapshot(snap) {
   renderTimeline();
   updateDisplay();
   saveSession(); // Keep localStorage in sync with undo/redo
+  updateUndoRedoUI();
 }
 
-function undo() { if(histIdx>0){histIdx--; applySnapshot(history[histIdx]);} }
-function redo() { if(histIdx<history.length-1){histIdx++; applySnapshot(history[histIdx]);} }
+function undo() { cancelNudgeHistory(); if(histIdx>0){histIdx--; applySnapshot(history[histIdx]);} }
+function redo() { cancelNudgeHistory(); if(histIdx<history.length-1){histIdx++; applySnapshot(history[histIdx]);} }
 
 function updateFileUI() {
     const adisp = $('audio-filename-display'), areload = $('audio-reload-display');
@@ -261,25 +309,20 @@ function renderTimeline() {
   });
 
   container.innerHTML = '';
+  trackEls = {};
   if(!lines.length){
-    // ... (placeholder code)
     container.innerHTML=`
       <div class="placeholder-text">
-        <i class="fas fa-cloud-upload-alt" style="font-size: 32px; margin-bottom: 12px; opacity: 0.5;"></i><br>
-        Load audio and lyrics to start editing<br>
-        <span style="font-size:12px; opacity:0.7;">(or Drag & Drop files anywhere)</span>
-        <div style="margin-top: 15px; font-size: 12px; font-weight: 500; color: var(--accent); opacity: 0.8;">
-            <i class="fas fa-hand-pointer"></i> Drag words or boundaries to adjust timings
+        <i class="fas fa-cloud-upload-alt" style="font-size: 36px; margin-bottom: 14px; opacity: 0.5;"></i><br>
+        <span style="font-size:17px; font-weight:500; color:var(--text-main); opacity:0.85;">Load audio and lyrics to start editing</span><br>
+        <span style="font-size:12.5px; opacity:0.7;">or Drag &amp; Drop files anywhere</span>
+        <div class="tips-grid">
+            <span class="tip-chip"><i class="fas fa-hand-pointer"></i> Drag words or boundaries to adjust timings</span>
+            <span class="tip-chip"><i class="fas fa-keyboard"></i> Press <kbd>K</kbd> for keyboard shortcuts</span>
+            <span class="tip-chip"><i class="fas fa-bolt"></i> <kbd>[</kbd> <kbd>]</kbd> nudge all timings</span>
+            <span class="tip-chip"><i class="fas fa-file-audio"></i> WAV / FLAC give sample-accurate sync</span>
         </div>
-        <div style="margin-top: 8px; font-size: 11px; opacity: 0.7; color: var(--text-main);">
-            <i class="fas fa-keyboard"></i> Press <b style="color:var(--accent)">K</b> to view all keyboard shortcuts
-        </div>
-        <div style="margin-top: 20px; font-size: 11px; opacity: 0.6; max-width: 400px; line-height: 1.5; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
-            <strong>Pro Tip for High Precision:</strong><br>
-            Use <b>WAV</b> or <b>FLAC</b> for sample-accurate sync. MP3 files may have slight timing offsets. 
-            If audio feels off, use the <b>[</b> or <b>]</b> buttons/keys to nudge all timings.
-        </div>
-        <div style="margin-top: 25px; font-size: 11px;">
+        <div style="margin-top: 28px; font-size: 11px;">
             <a href="https://github.com/dotslashgabut/lyricseditor" target="_blank" class="github-link">
                 <i class="fab fa-github" style="font-size: 16px;"></i> github.com/dotslashgabut/lyricseditor
             </a>
@@ -316,10 +359,10 @@ function renderTimeline() {
     if (line.agent || line.songPart) {
       badgesHtml += `<div class="track-badges" style="margin-top:3px; display:flex; gap:3px; flex-wrap:wrap; width:100%;">`;
       if (line.agent) {
-        badgesHtml += `<span class="agent-badge badge-${line.agent}" style="margin-left:0;" title="Vocal Agent: ${line.agent}">${line.agent}</span>`;
+        badgesHtml += `<span class="agent-badge badge-${escapeHtml(line.agent)}" style="margin-left:0;" title="Vocal Agent: ${escapeHtml(line.agent)}">${escapeHtml(line.agent)}</span>`;
       }
       if (line.songPart) {
-        badgesHtml += `<span class="part-badge" style="margin-left:0;" title="Song Part: ${line.songPart}">${line.songPart}</span>`;
+        badgesHtml += `<span class="part-badge" style="margin-left:0;" title="Song Part: ${escapeHtml(line.songPart)}">${escapeHtml(line.songPart)}</span>`;
       }
       badgesHtml += `</div>`;
     }
@@ -344,7 +387,7 @@ function renderTimeline() {
       const isActuallyBlank = !wText || wText === "\\" || wText === "[Empty]";
       if(isActuallyBlank) el.classList.add('blank-word');
       
-      el.innerHTML=`<div class="resize-handle left"></div><div class="word-text">${w.text || ""}</div><div class="word-duration">${((w.endMs-w.startMs)/1000).toFixed(3)}s</div><div class="resize-handle right"></div>`;
+      el.innerHTML=`<div class="resize-handle left"></div><div class="word-text">${escapeHtml(w.text || "")}</div><div class="word-duration">${((w.endMs-w.startMs)/1000).toFixed(3)}s</div><div class="resize-handle right"></div>`;
       tc.appendChild(el);
       posWord(el, w, line);
       bindDrag(el, w, line, tc, w.isPl);
@@ -386,12 +429,25 @@ function renderTimeline() {
     container.appendChild(createAddLineBtn(idx+1));
   });
 
+  // Cache track elements for fast per-frame updates
+  lines.forEach(line => {
+    const tr = $(`tc-${line.id}`);
+    if (!tr) return;
+    const wordEls = {};
+    (line.words || []).forEach(w => {
+      const we = $(`w-${w.id}`);
+      if (we) wordEls[w.id] = we;
+    });
+    trackEls[line.id] = { tr, pi: $(`pi-${line.id}`), wordEls };
+  });
+
   // Lazy load waveforms
   if (audioBuffer && isWaveformEnabled) {
     observeWaveforms();
   }
 
   statL.textContent=lines.length; statW.textContent=tw;
+  applySearchFilter();
   updateDisplay();
   updateSelectionCount();
   container.scrollTop = oldScroll;
@@ -455,7 +511,7 @@ function insertBlankLine(idx) {
     start = lines[idx-1].endMs;
     end = lines[idx].startMs;
     if (end <= start) {
-        return alert("No space between these lines to insert a new line.\nUse Shift Time or adjust timestamps to create a gap first.");
+        return showToast("No space between these lines. Use Shift Time or adjust timestamps to create a gap first.", 'warning');
     }
   }
   const maxId = lines.reduce((max, l) => Math.max(max, l.id || 0), 0);
@@ -510,11 +566,33 @@ function bindDrag(el, word, line, tc, isPl = false) {
       ns:i<siblings.length-1?siblings[i+1].startMs:null, ne:i<siblings.length-1?siblings[i+1].endMs:null};
   }
 
-  lh.onpointerdown=e=>{mode='rl';sx=e.clientX;hasDragged=false;capture();e.stopPropagation();el.setPointerCapture(e.pointerId); const tr=el.closest('.timeline-track'); if(tr)tr.classList.add('is-dragging');};
-  rh.onpointerdown=e=>{mode='rr';sx=e.clientX;hasDragged=false;capture();e.stopPropagation();el.setPointerCapture(e.pointerId); const tr=el.closest('.timeline-track'); if(tr)tr.classList.add('is-dragging');};
-  el.onpointerdown=e=>{if(e.target.classList.contains('resize-handle'))return;mode='drag';sx=e.clientX;hasDragged=false;capture();el.classList.add('dragging');el.setPointerCapture(e.pointerId); const tr=el.closest('.timeline-track'); if(tr)tr.classList.add('is-dragging');};
+  // Gesture-scoped listeners: attached on pointerdown, removed on pointerup.
+  // (Previously bound permanently per word → thousands of stale document listeners.)
+  function startGesture(e, m) {
+    mode=m; sx=e.clientX; hasDragged=false; capture();
+    try { el.setPointerCapture(e.pointerId); } catch(err) {}
+    const tr=el.closest('.timeline-track'); if(tr)tr.classList.add('is-dragging');
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    window.__dragListeners = (window.__dragListeners || 0) + 2;
+  }
 
-  document.addEventListener('pointermove', e=>{
+  lh.onpointerdown=e=>{e.stopPropagation();startGesture(e,'rl');};
+  rh.onpointerdown=e=>{e.stopPropagation();startGesture(e,'rr');};
+  el.onpointerdown=e=>{if(e.target.classList.contains('resize-handle'))return;el.classList.add('dragging');startGesture(e,'drag');};
+
+  let wfRafPending = false;
+  function scheduleWaveformRedraw() {
+    if (wfRafPending) return;
+    wfRafPending = true;
+    requestAnimationFrame(() => {
+      wfRafPending = false;
+      const tr = document.getElementById(`tc-${line.id}`);
+      if (tr) drawWaveformForLine(tr.querySelector('.track-content'), line);
+    });
+  }
+
+  function onMove(e){
     if(!mode)return;
     if(Math.abs(e.clientX - sx) > 2) hasDragged = true;
     const tw=tc.getBoundingClientRect().width;
@@ -619,13 +697,9 @@ function bindDrag(el, word, line, tc, isPl = false) {
       posWord(el, word, line);
     }
     
-    // Live update waveform if it's a boundary change
+    // Live update waveform if it's a boundary change (rAF-throttled)
     if (audioBuffer && (!prev || !next)) {
-        const tr = document.getElementById(`tc-${line.id}`);
-        if (tr) {
-            const contentContainer = tr.querySelector('.track-content');
-            drawWaveformForLine(contentContainer, line);
-        }
+        scheduleWaveformRedraw();
     }
 
     const tr = document.getElementById(`tc-${line.id}`);
@@ -644,9 +718,12 @@ function bindDrag(el, word, line, tc, isPl = false) {
         if (endTimeEl) endTimeEl.textContent = fmt(line.endMs/1000);
       }
     }
-  });
+  }
 
-  document.addEventListener('pointerup', ()=>{
+  function onUp(){
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    window.__dragListeners = Math.max(0, (window.__dragListeners || 2) - 2);
     if(mode){
       el.classList.remove('dragging');
       const tr = el.closest('.timeline-track');
@@ -659,7 +736,7 @@ function bindDrag(el, word, line, tc, isPl = false) {
       }
       mode=null;
     }
-  });
+  }
 }
 
 // Playback
@@ -726,62 +803,73 @@ function seekMs(ms){
 function updateDisplay(){
   const cs=currentTime/1000, ds=duration/1000;
   timeDisp.textContent=`${fmt(cs)} / ${fmt(ds)}`;
-  progFill.style.width=duration>0?(currentTime/duration*100)+'%':'0%';
-  
+  const pct = duration>0 ? (currentTime/duration*100) : 0;
+  progFill.style.width=pct+'%';
+  const knob = $('progress-knob');
+  if (knob) knob.style.left = pct+'%';
+
+  // Find active line
   let newActiveLineId = null;
-  lines.forEach(line=>{
-    const te=$(`tc-${line.id}`), pi=$(`pi-${line.id}`);
-    if(!te)return;
-    
-    if(currentTime>=line.startMs&&currentTime<line.endMs){
-      newActiveLineId=line.id;
-      if(!te.classList.contains('active')){
-          te.classList.add('active');
-          if(isPlaying) te.scrollIntoView({behavior:'smooth',block:'nearest'});
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (currentTime>=line.startMs&&currentTime<line.endMs) { newActiveLineId=line.id; break; }
+  }
+
+  // Update tracks via cached elements (no per-frame getElementById storm)
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const refs = trackEls[line.id];
+    if (!refs) continue;
+    const isActive = (line.id === newActiveLineId);
+
+    if (isActive) {
+      if (!refs.tr.classList.contains('active')) {
+        refs.tr.classList.add('active');
+        if (isPlaying) refs.tr.scrollIntoView({behavior:'smooth',block:'nearest'});
       }
-      if(pi){
-          pi.style.display='block';
-          pi.style.left=((currentTime-line.startMs)/(line.endMs-line.startMs)*100)+'%';
+      if (refs.pi) {
+        refs.pi.style.display='block';
+        refs.pi.style.left=((currentTime-line.startMs)/(line.endMs-line.startMs)*100)+'%';
       }
-      if(line.words){
-        line.words.forEach(w=>{
-          const we=$(`w-${w.id}`);
-          if(we){
-            if(isWordHighlightEnabled && currentTime>=w.startMs&&currentTime<w.endMs) we.classList.add('active');
-            else we.classList.remove('active');
-          }
-        });
+      if (line.words) {
+        for (const w of line.words) {
+          const we = refs.wordEls[w.id];
+          if (!we) continue;
+          const on = isWordHighlightEnabled && currentTime>=w.startMs&&currentTime<w.endMs;
+          if (on) we.classList.add('active'); else we.classList.remove('active');
+        }
       }
-    } else {
-      te.classList.remove('active');
-      if(pi)pi.style.display='none';
-      if(line.words){
-        line.words.forEach(w=>{
-          const we=$(`w-${w.id}`);
-          if(we) we.classList.remove('active');
-        });
-      }
+    } else if (refs.tr.classList.contains('active') || refs._wasActive) {
+      refs.tr.classList.remove('active');
+      if (refs.pi) refs.pi.style.display='none';
+      for (const wid in refs.wordEls) refs.wordEls[wid].classList.remove('active');
     }
-  });
-  
+    refs._wasActive = isActive;
+  }
+
   activeLineId = newActiveLineId;
 
-  // Update all track play buttons
-  document.querySelectorAll('.track-play-btn').forEach(btn => {
-    const tr = btn.closest('.timeline-track');
-    const lineId = tr ? Number(tr.id.replace('tc-', '')) : null;
-    const icon = btn.querySelector('i');
-    
-    if (lineId === activeLineId && isPlaying) {
-      icon.className = 'fas fa-stop';
-      icon.style.fontSize = '9px';
-      icon.style.marginLeft = '0';
-    } else {
-      icon.className = 'fas fa-play';
-      icon.style.fontSize = '9px';
-      icon.style.marginLeft = '1px';
-    }
-  });
+  // Update track play buttons only when state actually changed
+  if (activeLineId !== lastRenderedActiveId || isPlaying !== lastRenderedPlaying) {
+    document.querySelectorAll('.track-play-btn').forEach(btn => {
+      const tr = btn.closest('.timeline-track');
+      const lineId = tr ? Number(tr.id.replace('tc-', '')) : null;
+      const icon = btn.querySelector('i');
+      if (!icon) return;
+
+      if (lineId === activeLineId && isPlaying) {
+        icon.className = 'fas fa-stop';
+        icon.style.fontSize = '9px';
+        icon.style.marginLeft = '0';
+      } else {
+        icon.className = 'fas fa-play';
+        icon.style.fontSize = '9px';
+        icon.style.marginLeft = '1px';
+      }
+    });
+    lastRenderedActiveId = activeLineId;
+    lastRenderedPlaying = isPlaying;
+  }
 }
 
 // Audio Events
@@ -884,8 +972,45 @@ $('btn-repeat').onclick=toggleRepeat;
 $('btn-repeat-word').onclick=toggleRepeatWord;
 $('btn-repeat-song').onclick=toggleRepeatSong;
 
-// Progress bar seek
-$('progress-bar').onclick=e=>{if(!duration)return;const r=$('progress-bar').getBoundingClientRect();seekMs(Math.max(0,(e.clientX-r.left)/r.width*duration));};
+// Progress bar: click + drag to seek, hover shows time tooltip
+(function initProgressBar() {
+  const bar = $('progress-bar'), box = $('progress-container'), tip = $('progress-tooltip');
+  if (!bar || !box) return;
+  let seeking = false;
+
+  function seekAt(clientX) {
+    if (!duration) return;
+    const r = bar.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+    seekMs(ratio * duration);
+  }
+  function updateTip(clientX) {
+    if (!tip) return;
+    const r = bar.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+    tip.textContent = fmt(ratio * (duration || 0) / 1000);
+    const boxR = box.getBoundingClientRect();
+    tip.style.left = Math.max(24, Math.min(boxR.width - 24, clientX - boxR.left)) + 'px';
+  }
+
+  // Bind to the whole container for a generous hit area; ratio uses the bar rect
+  box.addEventListener('pointerdown', e => {
+    if (!duration) return;
+    seeking = true;
+    box.classList.add('seeking');
+    try { box.setPointerCapture(e.pointerId); } catch(err) {}
+    seekAt(e.clientX);
+    e.preventDefault();
+  });
+  box.addEventListener('pointermove', e => {
+    updateTip(e.clientX);
+    if (seeking) seekAt(e.clientX);
+  });
+  box.addEventListener('pointerup', e => {
+    if (seeking) { seekAt(e.clientX); seeking = false; box.classList.remove('seeking'); }
+  });
+  box.addEventListener('pointercancel', () => { seeking = false; box.classList.remove('seeking'); });
+})();
 
 // File Loading
 $('btn-load-audio').onclick=()=>$('input-audio').click();
@@ -1059,7 +1184,7 @@ function handleAudioFile(f, isRestore = false) {
           decodeAudioForWaveform(wavBuffer);
         } catch (e) {
           console.error("AIFF convert failed:", e);
-          alert("Failed to convert AIFF file: " + e.message + "\n\nPlease convert the audio to MP3 or WAV.");
+          showToast("Failed to convert AIFF file: " + e.message + " — please convert the audio to MP3 or WAV.", 'error', 5000);
           stopPlay();
           audioFilename = "";
           audioFullname = "";
@@ -1116,14 +1241,15 @@ audio.onerror = () => {
       return; 
   }
   
-  alert(`${msg}${details}\n\nPlease convert the audio to a standard MP3/WAV, or try using Firefox.`);
-  
+  showToast(`${msg} — please convert the audio to a standard MP3/WAV, or try Firefox.`, 'error', 6000);
+  console.warn('Audio error details:', details);
+
   // Revert UI since audio failed
   stopPlay();
   audioFilename = "";
   audioFullname = "";
   updateFileUI();
-  if(lines.length === 0) $('placeholder').style.display = 'flex';
+  if(lines.length === 0) renderTimeline(); // restores empty-state placeholder
 };
 $('btn-load-lyrics').onclick=()=>$('input-lyrics').click();
 function handleLyricsFile(f) {
@@ -1252,18 +1378,18 @@ $('import-segments-smart').onclick = () => {
     const pRadio = document.querySelector('input[name="seg-primary"]:checked');
     const rRadio = document.querySelector('input[name="seg-ref"]:checked');
     
-    if (!pRadio || !rRadio) return alert("Select both a Primary and a Reference segment.");
+    if (!pRadio || !rRadio) return showToast("Select both a Primary and a Reference segment.", 'warning');
     
     const pIdx = parseInt(pRadio.value);
     const rIdx = parseInt(rRadio.value);
     
-    if (pIdx === rIdx) return alert("Primary and Reference segments must be different.");
+    if (pIdx === rIdx) return showToast("Primary and Reference segments must be different.", 'warning');
     
     const primaryCues = parseContent(pendingSegments[pIdx], pendingFormat);
     const refCues = parseContent(pendingSegments[rIdx], pendingFormat);
     
     if (primaryCues.length <= refCues.length) {
-        return alert(`Primary segment (${primaryCues.length} lines) should ideally have more lines than Reference (${refCues.length} lines) to merge correctly.`);
+        return showToast(`Primary segment (${primaryCues.length} lines) should have more lines than Reference (${refCues.length} lines) to merge correctly.`, 'warning', 4500);
     }
 
     // Similarity Check
@@ -1319,7 +1445,8 @@ document.addEventListener('click',()=>document.querySelectorAll('.dropdown-menu.
 
 // Export
 function performExport(f, isQuick = false) {
-  if(!f || !lines.length) return;
+  if(!f) return;
+  if(!lines.length) { showToast('Nothing to export — load or create lyrics first.', 'warning'); return; }
   
   // Prioritize word-level (karaoke) formats for Quick Export
   let targetFormat = f;
@@ -1357,8 +1484,10 @@ function performExport(f, isQuick = false) {
     words: l.words,
     isBackground: !!(l.isBackground || l.role === 'x-bg'),
     role: l.role || null,
-    agent: l.agent || null
+    agent: l.agent || null,
+    songPart: l.songPart || null
   })), targetFormat, duration, { autoEmptyLines: autoEmpty, metadata: window.appMetadata }), name);
+  showToast(`Exported ${name}`, 'success');
 }
 
 $('export-menu').onclick=e=>{
@@ -1517,7 +1646,7 @@ function mergeSelectedLines() {
     pushHistory();
     renderTimeline();
   } else {
-    alert("Please select at least two lines to merge.");
+    showToast("Please select at least two lines to merge.", 'warning');
   }
 }
 
@@ -1778,9 +1907,9 @@ function applySmartReplaceTextFromCues(refCues, refFormat) {
           });
       }
   });
-  if (!allWords.length) return alert("No words found to replace.");
+  if (!allWords.length) return showToast("No words found to replace.", 'warning');
 
-  if (!refCues.length) return alert("No lines found in reference.");
+  if (!refCues.length) return showToast("No lines found in reference.", 'warning');
 
   // Flatten reference words while ignoring tags like [Verse 1], (verse), etc. and tracking refLineIdx
   const refWords = [];
@@ -1800,7 +1929,7 @@ function applySmartReplaceTextFromCues(refCues, refFormat) {
           });
       });
   });
-  if (!refWords.length) return alert("No words found in reference text.");
+  if (!refWords.length) return showToast("No words found in reference text.", 'warning');
 
   // Run the alignment
   const aligned = alignWordsWithReference(allWords, refWords);
@@ -1876,9 +2005,9 @@ function applyCombinedSmartMergeFromCues(refCues, refFormat) {
           });
       }
   });
-  if (!allWords.length) return alert("No words found to merge.");
+  if (!allWords.length) return showToast("No words found to merge.", 'warning');
 
-  if (!refCues.length) return alert("No lines found in reference.");
+  if (!refCues.length) return showToast("No lines found in reference.", 'warning');
 
   // Flatten reference words while ignoring tags like [Verse 1], (verse), etc. and tracking refLineIdx
   const refWords = [];
@@ -1898,7 +2027,7 @@ function applyCombinedSmartMergeFromCues(refCues, refFormat) {
           });
       });
   });
-  if (!refWords.length) return alert("No words found in reference text.");
+  if (!refWords.length) return showToast("No words found in reference text.", 'warning');
 
   // Run the alignment
   const aligned = alignWordsWithReference(allWords, refWords);
@@ -2148,9 +2277,9 @@ function applySmartMergeFromCues(refCues, refFormat) {
           });
       }
   });
-  if (!allWords.length) return alert("No words found to merge.");
+  if (!allWords.length) return showToast("No words found to merge.", 'warning');
 
-  if (!refCues.length) return alert("No lines found in reference.");
+  if (!refCues.length) return showToast("No lines found in reference.", 'warning');
 
   let nextLineId = Math.max(0, ...lines.map(l => Number(l.id) || 0)) + 1;
   let nextWordId = Math.max(0, ...allWords.map(w => Number(w.id) || 0)) + 1;
@@ -2468,13 +2597,13 @@ $('input-smart-merge').onchange = e => {
 let linesToSplit = [];
 function openSplitModal() {
   const checks=Array.from(document.querySelectorAll('.line-checkbox:checked')).map(c=>Number(c.dataset.id));
-  if(checks.length === 0) return alert("Please select at least one line to split.");
+  if(checks.length === 0) return showToast("Please select at least one line to split.", 'warning');
   linesToSplit = lines.filter(l=>checks.includes(l.id));
   
   if (linesToSplit.length === 1) {
     const l = linesToSplit[0];
     const maxW = (l.words && l.words.length > 0) ? l.words.length - 1 : (l.text.trim().split(/\s+/).length - 1);
-    if(maxW < 1) return alert("Line only has 1 word. Cannot split.");
+    if(maxW < 1) return showToast("Line only has 1 word — cannot split.", 'warning');
     $('split-word-container').style.opacity = '1';
     $('split-method-word').disabled = false;
     $('split-word-index').max = maxW;
@@ -2735,68 +2864,6 @@ function performHotFix() {
 $('btn-hotfix').onclick = performHotFix;
 $('tool-hotfix').onclick = () => { performHotFix(); $('tools-menu').classList.remove('open'); };
 
-
-  
-  // 2. Word-level structural cleanup
-  lines.forEach(l => {
-    if(!l.words || !l.words.length) return;
-    
-    // Remove zero-duration or invalid blank/ghost blocks
-    l.words = l.words.filter(w => {
-        const t = (w.text || "").trim();
-        if (!t || t === "\\") {
-            if (w.endMs <= w.startMs) return false;
-            if (w.startMs === 0 && w.endMs === 0) return false;
-        }
-        return true;
-    });
-    
-    if(l.words.length === 0) return;
-
-    // 3. Resolve overlaps (Fix Word Overlaps)
-    const minD = 20;
-    for (let i = 0; i < l.words.length - 1; i++) {
-        if (l.words[i].endMs > l.words[i + 1].startMs) {
-            l.words[i + 1].startMs = l.words[i].endMs;
-            if (l.words[i + 1].endMs < l.words[i + 1].startMs + minD) {
-                l.words[i + 1].endMs = l.words[i + 1].startMs + minD;
-            }
-        }
-    }
-    
-    // 4. Fill gaps (Ensure full line coverage)
-    l.words[0].startMs = l.startMs;
-    for (let i = 0; i < l.words.length - 1; i++) {
-        l.words[i].endMs = l.words[i + 1].startMs;
-    }
-    l.words[l.words.length - 1].endMs = l.endMs;
-  });
-
-  // 5. Resolve Line-Level Overlaps & Jumps (Sequential Alignment)
-  const minD = 20;
-  for (let i = 0; i < lines.length - 1; i++) {
-    if (lines[i].endMs > lines[i + 1].startMs) {
-      lines[i].endMs = lines[i + 1].startMs;
-      // Also ensure words inside the line don't exceed the new boundary
-      if (lines[i].words && lines[i].words.length > 0) {
-        lines[i].words.forEach(w => {
-          if (w.startMs > lines[i].endMs) w.startMs = Math.max(lines[i].startMs, lines[i].endMs - minD);
-          if (w.endMs > lines[i].endMs) w.endMs = lines[i].endMs;
-        });
-        for (let j = 0; j < lines[i].words.length - 1; j++) {
-          if (lines[i].words[j].endMs > lines[i].words[j + 1].startMs) {
-              lines[i].words[j + 1].startMs = lines[i].words[j].endMs;
-              if (lines[i].words[j + 1].endMs < lines[i].words[j + 1].startMs + minD) {
-                  lines[i].words[j + 1].endMs = lines[i].words[j + 1].startMs + minD;
-              }
-          }
-        }
-      }
-    }
-  }
-  
-
-
 // Shift Time Modal
 $('shift-minus-500').onclick=()=>$('shift-amount').value=parseInt($('shift-amount').value||0)-500;
 $('shift-minus-100').onclick=()=>$('shift-amount').value=parseInt($('shift-amount').value||0)-100;
@@ -2829,20 +2896,31 @@ function updateSelectionCount() {
     const cbs = document.querySelectorAll('.line-checkbox');
     const checked = document.querySelectorAll('.line-checkbox:checked');
     const master = $('check-all-lines');
-    const label = master.parentElement.querySelector('span') || master.nextSibling;
-    
+    const label = $('check-all-label');
+    const delLabel = $('delete-selected-label');
+
+    // Reflect selection on track cards
+    cbs.forEach(cb => {
+        const tr = cb.closest('.timeline-track');
+        if (tr) tr.classList.toggle('selected', cb.checked);
+    });
+
+    if (label) {
+        label.textContent = checked.length === 0 ? "Select All / None" : `Select All / None (${checked.length})`;
+    }
+    if (delLabel) {
+        delLabel.textContent = checked.length === 0 ? "Delete Selected" : `Delete Selected (${checked.length})`;
+    }
+
     if (checked.length === 0) {
         master.checked = false;
         master.indeterminate = false;
-        if (label) label.textContent = "Select All / None";
     } else if (checked.length === cbs.length) {
         master.checked = true;
         master.indeterminate = false;
-        if (label) label.textContent = `Select All / None (${checked.length})`;
     } else {
         master.checked = false;
         master.indeterminate = true;
-        if (label) label.textContent = `Select All / None (${checked.length})`;
     }
 }
 
@@ -3557,6 +3635,7 @@ function setViewMode(mode) {
         $('view-one-line').classList.add('active');
         $('view-compact').classList.remove('active');
     }
+    savePrefs({ viewMode: mode });
 }
 
 $('view-one-line').onclick = () => setViewMode('default');
@@ -3575,6 +3654,7 @@ $('btn-toggle-waveform').onclick = () => {
 $('btn-toggle-highlight').onclick = () => {
     isWordHighlightEnabled = !isWordHighlightEnabled;
     $('btn-toggle-highlight').style.color = isWordHighlightEnabled ? 'var(--accent)' : 'var(--text-muted)';
+    savePrefs({ wordHighlight: isWordHighlightEnabled });
     updateDisplay();
 };
 
@@ -3613,15 +3693,8 @@ window.addEventListener('keydown', e => {
   const isMod = e.ctrlKey || e.metaKey;
 
   if (e.key === 'Escape') {
-    $('shift-modal').style.display = 'none';
-    $('split-line-modal').style.display = 'none';
-    $('find-replace-modal').style.display = 'none';
-    $('shortcuts-modal').style.display = 'none';
-    $('edit-text-modal').style.display = 'none';
-    $('smart-merge-modal').style.display = 'none';
-    $('format-text-modal').style.display = 'none';
-    $('jump-line-modal').style.display = 'none';
-    $('jump-word-modal').style.display = 'none';
+    closeAllModals();
+    document.querySelectorAll('.dropdown-menu.open').forEach(m => m.classList.remove('open'));
     if (document.activeElement === $('search-input')) {
       $('search-input').blur();
     }
@@ -3719,9 +3792,14 @@ $('btn-nudge-forward').onclick = () => {
 };
 
 
+let nudgeHistTimer = null;
+function cancelNudgeHistory() {
+    if (nudgeHistTimer) { clearTimeout(nudgeHistTimer); nudgeHistTimer = null; }
+}
+
 function nudgeTime(ms) {
     if (!lines.length) return;
-    
+
     // Check if there are any selected lines
     const selectedIds = new Set();
     document.querySelectorAll('.line-checkbox:checked').forEach(cb => {
@@ -3729,47 +3807,59 @@ function nudgeTime(ms) {
         selectedIds.add(id);
     });
 
-    const targetLines = selectedIds.size > 0 
-        ? lines.filter(l => selectedIds.has(l.id)) 
+    const targetLines = selectedIds.size > 0
+        ? lines.filter(l => selectedIds.has(l.id))
         : lines;
 
-    targetLines.forEach(l => { 
-        l.startMs = Math.max(0, l.startMs + ms); 
-        l.endMs = Math.max(0, l.endMs + ms); 
-        if (l.words) l.words.forEach(w => { 
-            w.startMs = Math.max(0, w.startMs + ms); 
-            w.endMs = Math.max(0, w.endMs + ms); 
-        }); 
+    targetLines.forEach(l => {
+        l.startMs = Math.max(0, l.startMs + ms);
+        l.endMs = Math.max(0, l.endMs + ms);
+        if (l.words) l.words.forEach(w => {
+            w.startMs = Math.max(0, w.startMs + ms);
+            w.endMs = Math.max(0, w.endMs + ms);
+        });
     });
-    
-    pushHistory(); 
+
     renderTimeline();
+    // Coalesce rapid consecutive nudges into a single undo step
+    cancelNudgeHistory();
+    nudgeHistTimer = setTimeout(() => { nudgeHistTimer = null; pushHistory(); }, 550);
 }
 
 // Search
-$('search-input').oninput=e=>{
-  const q=e.target.value.toLowerCase();
+function applySearchFilter() {
+  const input = $('search-input');
+  const q = (input ? input.value : '').toLowerCase().trim();
   $('search-clear').style.display = q ? 'block' : 'none';
   if (q) container.classList.add('searching');
   else container.classList.remove('searching');
 
-  document.querySelectorAll('.timeline-track').forEach(t=>{t.style.display='';});
-  if(!q)return;
-  lines.forEach(l=>{
-      const el=$(`tc-${l.id}`);
-      if(el) {
-          const text = (l.text || "").toLowerCase();
-          const wordMatch = l.words ? l.words.some(w => (w.text || "").toLowerCase().includes(q)) : false;
-          if(!text.includes(q) && !wordMatch) el.style.display='none';
+  let matches = 0;
+  document.querySelectorAll('.timeline-track').forEach(t => { t.style.display=''; });
+  if (q) {
+    lines.forEach(l => {
+      const el = $(`tc-${l.id}`);
+      if (el) {
+        const text = (l.text || "").toLowerCase();
+        const wordMatch = l.words ? l.words.some(w => (w.text || "").toLowerCase().includes(q)) : false;
+        if (!text.includes(q) && !wordMatch) el.style.display='none';
+        else matches++;
       }
-  });
-};
+    });
+  }
+  const countEl = $('search-count');
+  if (countEl) {
+    countEl.style.display = q ? 'block' : 'none';
+    countEl.textContent = q ? `${matches}/${lines.length}` : '';
+    countEl.style.color = matches === 0 && q ? '#ff4d4f' : 'var(--accent)';
+  }
+}
+
+$('search-input').oninput = applySearchFilter;
 
 $('search-clear').onclick = () => {
     $('search-input').value = '';
-    $('search-clear').style.display = 'none';
-    container.classList.remove('searching');
-    document.querySelectorAll('.timeline-track').forEach(t => { t.style.display = ''; });
+    applySearchFilter();
     $('search-input').focus();
 };
 
@@ -3887,17 +3977,18 @@ $('jl-apply').onclick = () => {
     } else if ($('jump-line-input').value === '') {
         $('jump-line-modal').style.display = 'none';
     } else {
-        alert(`Invalid line number. Please enter a number between 1 and ${lines.length}.`);
+        showToast(`Invalid line number — enter 1 to ${lines.length}.`, 'warning');
     }
 };
 $('jump-line-input').onkeydown = (e) => {
     if (e.key === 'Enter') $('jl-apply').click();
 };
 
-window.addEventListener('click', (e) => { 
-    if (e.target === $('shortcuts-modal')) $('shortcuts-modal').style.display = 'none'; 
-    if (e.target === $('jump-line-modal')) $('jump-line-modal').style.display = 'none';
-    if (e.target === $('jump-word-modal')) $('jump-word-modal').style.display = 'none';
+// Click on any modal backdrop closes it (consistent across all modals)
+document.addEventListener('mousedown', (e) => {
+    if (e.target.classList && e.target.classList.contains('modal-overlay')) {
+        e.target.style.display = 'none';
+    }
 });
 
 // Jump to Word
@@ -3934,7 +4025,7 @@ $('jw-apply').onclick = () => {
             }
             count += wordCount;
         }
-        if (!found) alert("Word index out of range");
+        if (!found) showToast("Word index out of range", 'warning');
     } else if ($('jump-word-input').value === '') {
         $('jump-word-modal').style.display = 'none';
     }
@@ -3953,16 +4044,28 @@ document.addEventListener('fullscreenchange', () => {
 });
 
 // Drag & Drop
+let dragDepth = 0;
+function setDropOverlay(on) {
+    document.body.classList.toggle('show-drop-overlay', on);
+    if (!lines.length) container.classList.toggle('drag-over', on);
+}
+document.addEventListener('dragenter', e => {
+    if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')) {
+        dragDepth++;
+        setDropOverlay(true);
+    }
+});
 document.addEventListener('dragover', e => {
     e.preventDefault();
-    if (!lines.length) container.classList.add('drag-over');
 });
 document.addEventListener('dragleave', e => {
-    container.classList.remove('drag-over');
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) setDropOverlay(false);
 });
 document.addEventListener('drop', e => {
     e.preventDefault();
-    container.classList.remove('drag-over');
+    dragDepth = 0;
+    setDropOverlay(false);
     const files = Array.from(e.dataTransfer.files);
     if (!files.length) return;
 
@@ -3982,7 +4085,7 @@ document.addEventListener('drop', e => {
     }
 
     if (audioCount > 1 || lyricsCount > 1) {
-        alert("Too many files! Please drop only 1 audio and/or 1 lyrics file at a time.");
+        showToast("Too many files — drop only 1 audio and/or 1 lyrics file at a time.", 'warning');
         return;
     }
 

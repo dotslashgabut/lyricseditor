@@ -211,10 +211,15 @@
     return {};
   }
 
+  function notify(msg, type, dur) {
+    if (typeof window.showToast === 'function') window.showToast(msg, type, dur);
+    else alert(msg);
+  }
+
   async function handleMetadataExtractionAudio() {
     const audioFile = typeof window.getLastAudioFile === 'function' ? window.getLastAudioFile() : null;
     if (!audioFile) {
-      alert("No audio file is currently loaded.");
+      notify("No audio file is currently loaded.", 'warning');
       return;
     }
     const extracted = await extractAudioMetadata(audioFile);
@@ -224,7 +229,7 @@
   async function handleMetadataExtractionLyrics() {
     const lyricsFile = typeof window.getLastLyricsFile === 'function' ? window.getLastLyricsFile() : null;
     if (!lyricsFile) {
-      alert("No lyrics/subtitle file is currently loaded.");
+      notify("No lyrics/subtitle file is currently loaded.", 'warning');
       return;
     }
     const extracted = await extractLyricsMetadata(lyricsFile);
@@ -233,7 +238,7 @@
 
   function applyExtractedMetadata(extracted, source) {
     if (!extracted || (!extracted.title && !extracted.artist && !extracted.album)) {
-      alert("Could not extract any metadata fields from the selected file.");
+      notify("Could not extract any metadata fields from the selected file.", 'warning');
       return;
     }
 
@@ -275,11 +280,7 @@
     }
 
     // Toast feedback
-    const toast = document.createElement('div');
-    toast.textContent = "Extracted metadata from " + source + " ✓";
-    toast.style.cssText = "position:fixed; bottom:20px; right:20px; background:#1a1a1d; color:#fff; border:1px solid #333; padding:10px 16px; border-radius:8px; font-size:13px; z-index:9999; box-shadow:0 4px 12px rgba(0,0,0,0.4);";
-    document.body.appendChild(toast);
-    setTimeout(()=>toast.remove(), 3000);
+    notify("Extracted metadata from " + source, 'success');
   }
 
   document.addEventListener('DOMContentLoaded', ()=>{
@@ -300,10 +301,7 @@
     $('metadata-save')?.addEventListener('click', ()=>{
       collectForm();
       $('metadata-modal').style.display='none';
-      const toast = document.createElement('div');
-      toast.textContent = "Metadata saved ✓";
-      toast.style.cssText = "position:fixed; bottom:20px; right:20px; background:#1a1a1d; color:#fff; border:1px solid #333; padding:10px 16px; border-radius:8px; font-size:13px; z-index:9999; box-shadow:0 4px 12px rgba(0,0,0,0.4);";
-      document.body.appendChild(toast); setTimeout(()=>toast.remove(), 2000);
+      notify("Metadata saved", 'success');
     });
 
     // Extract buttons
@@ -323,31 +321,6 @@
     });
   });
 
-  // Hook into processImportedContent if exists, to auto-merge metadata from file
-  const origProcess = window.processImportedContent;
-  if(typeof origProcess === 'function'){
-    window.processImportedContent = function(content, fmt, fileObj){
-      const result = origProcess(content, fmt, fileObj);
-      try{
-        if(window.parseMetadata){
-          const meta = window.parseMetadata(content, fmt);
-          if(meta){
-            let changed=false;
-            if(meta.title){ window.appMetadata.title = meta.title; changed=true; }
-            if(meta.artist){ window.appMetadata.artist = meta.artist; changed=true; }
-            if(meta.album){ window.appMetadata.album = meta.album; changed=true; }
-            if(meta.language){ window.appMetadata.language = meta.language; changed=true; }
-            if(meta.by){ window.appMetadata.by = meta.by; changed=true; }
-            if(meta.author){ window.appMetadata.author = meta.author; changed=true; }
-            if(meta.offset!==undefined){ window.appMetadata.offset = meta.offset; changed=true; }
-            if(meta.agents && meta.agents.length){ window.appMetadata.agents = meta.agents; changed=true; }
-            if(meta.songwriters && meta.songwriters.length){ window.appMetadata.songwriters = meta.songwriters; window.appMetadata.appleSongwriters = meta.songwriters; changed=true; }
-            if(meta.itunesTiming){ window.appMetadata.itunesTiming = meta.itunesTiming; window.appMetadata.appleTiming = meta.itunesTiming; changed=true; }
-            if(changed) saveAppMetadata();
-          }
-        }
-      }catch(e){ console.warn(e); }
-      return result;
-    };
-  }
+  // NOTE: metadata auto-merge on import is handled directly inside
+  // processImportedContent() in script.js — no hook needed here.
 })();

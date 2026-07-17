@@ -286,7 +286,7 @@ html, body {
 
 .dropdown-menu.dropdown-menu-right {
     left: auto;
-    right: 4px;
+    right: 0px;
 }
 
 .dropdown-menu.open {
@@ -487,7 +487,7 @@ html, body {
 .track-info {
     font-size: 11px;
     color: var(--text-muted);
-    font-family: monospace;
+    font-family: 'JetBrains Mono', monospace;
     min-width: 48px;
     text-align: right;
 }
@@ -515,7 +515,7 @@ html, body {
 }
 
 .track-end-time {
-    font-family: monospace;
+    font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
     color: var(--text-muted);
     min-width: 48px;
@@ -654,17 +654,22 @@ html, body {
 }
 
 .time-display {
-    font-family: monospace;
-    font-size: 13px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px;
     color: var(--text-muted);
-    min-width: 130px;
+    min-width: 148px;
     flex-shrink: 0;
+    letter-spacing: 0.2px;
 }
 
 .progress-bar-container {
     flex: 1;
     display: flex;
     align-items: center;
+    position: relative;
+    height: 100%;
+    min-height: 20px;
+    cursor: pointer;
 }
 
 .progress-bar {
@@ -674,6 +679,12 @@ html, body {
     border-radius: 3px;
     cursor: pointer;
     position: relative;
+    transition: height 0.15s ease;
+}
+
+.progress-bar-container:hover .progress-bar,
+.progress-bar-container.seeking .progress-bar {
+    height: 8px;
 }
 
 .progress-fill {
@@ -683,6 +694,50 @@ html, body {
     border-radius: 3px;
     pointer-events: none;
     transition: width 0.05s linear;
+}
+
+.progress-knob {
+    position: absolute;
+    top: 50%;
+    left: 0%;
+    width: 13px;
+    height: 13px;
+    background: #fff;
+    border-radius: 50%;
+    transform: translate(-50%, -50%) scale(0);
+    transition: transform 0.15s ease;
+    pointer-events: none;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.6), 0 0 0 3px rgba(255,107,0,0.35);
+    z-index: 3;
+}
+
+.progress-bar-container:hover .progress-knob,
+.progress-bar-container.seeking .progress-knob {
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.progress-tooltip {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    transform: translateX(-50%);
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    color: var(--text-main);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 5px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+    white-space: nowrap;
+    z-index: 50;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+.progress-bar-container:hover .progress-tooltip {
+    opacity: 1;
 }
 
 .volume-control {
@@ -1190,15 +1245,10 @@ html, body {
     user-select: none;
 }
 
-#timeline-container.drag-over {
-    border-color: var(--accent);
-    background: rgba(100, 108, 255, 0.05);
-    color: var(--accent);
-}
-
 #timeline-container.drag-over .placeholder-text {
     transform: scale(1.02);
     color: var(--accent);
+    border-color: var(--accent);
 }
 
 .search-box {
@@ -1282,4 +1332,278 @@ input[type=number]::-webkit-outer-spin-button {
 input[type=number] {
     -moz-appearance: textfield;
     appearance: textfield;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   UI/UX REFINEMENTS
+   ══════════════════════════════════════════════════════════════ */
+
+/* Empty toolbar center placeholder (kept for flex layout) */
+.toolbar-center { visibility: hidden; }
+
+/* ── Focus visibility for keyboard users ── */
+.btn:focus-visible,
+.icon-btn:focus-visible,
+.track-play-btn:focus-visible,
+.add-line-btn:focus-visible {
+    outline: 2px solid rgba(255, 107, 0, 0.65);
+    outline-offset: 1px;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+    outline: none;
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 2px rgba(255, 107, 0, 0.25);
+}
+
+/* ── Disabled controls ── */
+.btn:disabled,
+.icon-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
+    pointer-events: none;
+}
+
+/* ── Tactile press feedback ── */
+.btn:not(:disabled):active,
+.icon-btn:not(:disabled):active {
+    transform: scale(0.94);
+}
+.play-btn:active { transform: scale(0.92) !important; }
+
+/* ── Primary CTA uses brand accent ── */
+#btn-export {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    font-weight: 600;
+    box-shadow: 0 2px 10px rgba(255, 107, 0, 0.25);
+    transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+}
+#btn-export:hover {
+    background: var(--accent-hover);
+    box-shadow: 0 4px 16px rgba(255, 107, 0, 0.4);
+}
+
+/* ── Dropdown item hover with accent edge ── */
+.dropdown-item {
+    position: relative;
+}
+.dropdown-item:hover {
+    background: var(--bg-panel-hover);
+    box-shadow: inset 2px 0 0 var(--accent);
+}
+.dropdown-item:hover i { color: var(--accent); }
+
+/* ── Modal entrance animation ── */
+.modal-overlay .modal-box {
+    animation: modalIn 0.18s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+@keyframes modalIn {
+    from { opacity: 0; transform: translateY(10px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Selected track highlight ── */
+.timeline-track.selected {
+    border-color: rgba(255, 107, 0, 0.5);
+    background: linear-gradient(0deg, rgba(255, 107, 0, 0.04), rgba(255, 107, 0, 0.04)), var(--bg-panel);
+}
+.timeline-track.selected:hover { border-color: rgba(255, 107, 0, 0.75); }
+
+/* ── Add-line affordance: subtly visible ── */
+.add-line-wrapper { opacity: 0.18; }
+.add-line-wrapper:hover { opacity: 1; }
+
+/* ── Search match counter ── */
+#search-count {
+    position: absolute;
+    right: 28px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 10px;
+    color: var(--accent);
+    font-weight: 600;
+    pointer-events: none;
+    font-family: 'JetBrains Mono', monospace;
+}
+#timeline-container.searching .timeline-track { transition: opacity 0.15s ease; }
+
+/* ── Toast notifications ── */
+.toast-container {
+    position: fixed;
+    bottom: 84px;
+    right: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 1000;
+    pointer-events: none;
+    max-width: min(360px, calc(100vw - 40px));
+}
+.toast {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    background: rgba(26, 26, 29, 0.97);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    color: var(--text-main);
+    padding: 11px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.45;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    backdrop-filter: blur(8px);
+    animation: toastIn 0.25s cubic-bezier(0.34, 1.3, 0.64, 1);
+    pointer-events: auto;
+    word-break: break-word;
+}
+.toast.toast-out {
+    animation: toastOut 0.25s ease forwards;
+}
+.toast i { margin-top: 1px; flex-shrink: 0; }
+.toast-success { border-left-color: #3dd68c; }
+.toast-success i { color: #3dd68c; }
+.toast-error { border-left-color: #ff4d4f; }
+.toast-error i { color: #ff4d4f; }
+.toast-warning { border-left-color: #ffb020; }
+.toast-warning i { color: #ffb020; }
+.toast-info { border-left-color: var(--accent); }
+.toast-info i { color: var(--accent); }
+@keyframes toastIn {
+    from { opacity: 0; transform: translateX(30px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+@keyframes toastOut {
+    to { opacity: 0; transform: translateX(30px); }
+}
+
+/* ── Drag & Drop overlay ── */
+.drop-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 15, 17, 0.75);
+    backdrop-filter: blur(3px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease;
+}
+body.show-drop-overlay .drop-overlay {
+    opacity: 1;
+}
+.drop-overlay-box {
+    border: 2px dashed var(--accent);
+    border-radius: 16px;
+    padding: 48px 64px;
+    text-align: center;
+    color: var(--accent);
+    background: rgba(255, 107, 0, 0.06);
+    animation: dropPulse 1.4s ease-in-out infinite;
+}
+.drop-overlay-box i { font-size: 44px; margin-bottom: 14px; display: block; }
+.drop-overlay-title { font-size: 18px; font-weight: 600; color: var(--text-main); }
+.drop-overlay-sub { font-size: 12.5px; color: var(--text-muted); margin-top: 6px; }
+@keyframes dropPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.025); }
+}
+
+/* ── Placeholder (empty state) polish ── */
+.placeholder-text .tips-grid {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 18px;
+    max-width: 560px;
+}
+.placeholder-text .tip-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 13px;
+}
+.placeholder-text .tip-chip i { color: var(--accent); font-size: 11px; }
+.placeholder-text .tip-chip kbd {
+    background: var(--bg-dark);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0 5px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    color: var(--accent);
+}
+
+/* ── Word block refinement ── */
+.word-block {
+    border-left: 1px solid transparent;
+}
+.word-block:hover {
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.09);
+}
+.word-block.dragging {
+    box-shadow: 0 4px 18px rgba(0,0,0,0.55), inset 0 0 0 1px var(--accent);
+}
+.word-duration {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8.5px;
+    opacity: 0.75;
+}
+
+/* ── Header action buttons: unify look ── */
+#btn-add-line-header {
+    color: var(--accent);
+    border-color: rgba(255, 107, 0, 0.25);
+}
+#btn-add-line-header:hover {
+    background: rgba(255, 107, 0, 0.12);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* ── Toolbar polish ── */
+.toolbar {
+    box-shadow: 0 1px 0 rgba(0,0,0,0.4), 0 4px 14px rgba(0,0,0,0.18);
+    position: relative;
+    z-index: 300;
+}
+.view-mode-toggle .btn.active {
+    box-shadow: 0 2px 6px rgba(255, 107, 0, 0.35);
+}
+
+/* ── Smooth scrolling in timeline ── */
+.timeline-scroll-area {
+    scroll-behavior: smooth;
+}
+
+/* ── Player footer polish ── */
+.player-controls {
+    box-shadow: 0 -4px 14px rgba(0,0,0,0.18);
+    position: relative;
+    z-index: 300;
+}
+#btn-stop:hover { color: #ff4d4f; }
+
+/* ── Metadata/attr modals: keep above drop overlay ── */
+.modal-overlay { z-index: 950; }
+
+/* ── Respect reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
 }
