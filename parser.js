@@ -518,15 +518,15 @@ function fillGapsWithGhostWords(cues) {
       if (chWords.length === 0) return [];
       const filled = [];
 
-      // Lead-in gap from line startMs
-      if (chWords[0].startMs > startMs + 20) {
+      // Lead-in gap from line startMs (only for main channel, never create lead-in ghost blocks across line for background vocals)
+      if (!isBg && chWords[0].startMs > startMs + 20) {
         filled.push({
           id: nextGhostId++,
           text: "",
           startMs: startMs,
           endMs: chWords[0].startMs,
-          isBackground: isBg,
-          role: isBg ? 'x-bg' : null,
+          isBackground: false,
+          role: null,
           agent: pAgent
         });
       }
@@ -549,16 +549,16 @@ function fillGapsWithGhostWords(cues) {
         }
       }
 
-      // Tail gap to line endMs
+      // Tail gap to line endMs (only for main channel)
       const lastW = filled[filled.length - 1];
-      if (lastW && lastW.endMs < endMs - 20) {
+      if (!isBg && lastW && lastW.endMs < endMs - 20) {
         filled.push({
           id: nextGhostId++,
           text: "",
           startMs: lastW.endMs,
           endMs: endMs,
-          isBackground: isBg,
-          role: isBg ? 'x-bg' : null,
+          isBackground: false,
+          role: null,
           agent: pAgent
         });
       }
@@ -568,14 +568,34 @@ function fillGapsWithGhostWords(cues) {
 
     let finalWords = [];
     if (hasBg && hasMain) {
+      // Mixed line: only fill gaps for the main vocal channel, and preserve background vocal words as-is
       const mainChannel = c.words.filter(w => !w.isBackground && w.role !== 'x-bg');
       const bgChannel = c.words.filter(w => w.isBackground || w.role === 'x-bg');
       const filledMain = fillChannelGaps(mainChannel, false);
-      const filledBg = fillChannelGaps(bgChannel, true);
-      finalWords = [...filledMain, ...filledBg].sort((a, b) => a.startMs - b.startMs);
+      finalWords = [...filledMain, ...bgChannel].sort((a, b) => a.startMs - b.startMs);
+    } else if (hasBg || pIsBg) {
+      // Pure background vocal line: do not insert line-spanning lead-in or tail ghost blocks
+      const filledBg = [];
+      for (let k = 0; k < c.words.length; k++) {
+        filledBg.push(c.words[k]);
+        if (k < c.words.length - 1) {
+          const gap = c.words[k+1].startMs - c.words[k].endMs;
+          if (gap > 20) {
+            filledBg.push({
+              id: nextGhostId++,
+              text: "",
+              startMs: c.words[k].endMs,
+              endMs: c.words[k+1].startMs,
+              isBackground: true,
+              role: 'x-bg',
+              agent: c.words[k].agent || pAgent
+            });
+          }
+        }
+      }
+      finalWords = filledBg;
     } else {
-      const isBg = pIsBg || (c.words[0].isBackground || c.words[0].role === 'x-bg');
-      finalWords = fillChannelGaps(c.words, isBg);
+      finalWords = fillChannelGaps(c.words, false);
     }
 
     c.words = finalWords;
@@ -762,79 +782,8 @@ function parseTTML(content) {
     }
     if (endMs <= startMs) endMs = startMs + 2000;
 
-    // If words exist, insert ghost word-blocks into any gaps between timestamps so word blocks stay connected
     if (words.length > 0) {
       words.sort((a, b) => a.startMs - b.startMs);
-
-      const hasBg = words.some(w => w.isBackground || w.role === 'x-bg');
-      const hasMain = words.some(w => !w.isBackground && w.role !== 'x-bg');
-      
-      function fillChannelGaps(chWords, isBg) {
-        if (chWords.length === 0) return [];
-        const filled = [];
-        
-        // Lead-in gap from line startMs
-        if (chWords[0].startMs > startMs + 20) {
-          filled.push({
-            id: wordId++,
-            text: "",
-            startMs: startMs,
-            endMs: chWords[0].startMs,
-            isBackground: isBg,
-            role: isBg ? 'x-bg' : null,
-            agent: pAgent || null
-          });
-        }
-
-        for (let k = 0; k < chWords.length; k++) {
-          filled.push(chWords[k]);
-          if (k < chWords.length - 1) {
-            const gap = chWords[k+1].startMs - chWords[k].endMs;
-            if (gap > 5) {
-              filled.push({
-                id: wordId++,
-                text: "",
-                startMs: chWords[k].endMs,
-                endMs: chWords[k+1].startMs,
-                isBackground: isBg,
-                role: isBg ? 'x-bg' : null,
-                agent: chWords[k].agent || pAgent || null
-              });
-            }
-          }
-        }
-
-        // Tail gap to line endMs
-        const lastW = filled[filled.length - 1];
-        if (lastW && lastW.endMs < endMs - 20) {
-          filled.push({
-            id: wordId++,
-            text: "",
-            startMs: lastW.endMs,
-            endMs: endMs,
-            isBackground: isBg,
-            role: isBg ? 'x-bg' : null,
-            agent: pAgent || null
-          });
-        }
-
-        return filled;
-      }
-
-      let finalWords = [];
-      if (hasBg && hasMain) {
-        const mainChannel = words.filter(w => !w.isBackground && w.role !== 'x-bg');
-        const bgChannel = words.filter(w => w.isBackground || w.role === 'x-bg');
-        const filledMain = fillChannelGaps(mainChannel, false);
-        const filledBg = fillChannelGaps(bgChannel, true);
-        finalWords = [...filledMain, ...filledBg].sort((a, b) => a.startMs - b.startMs);
-      } else {
-        const isBg = pIsBg || (words[0].isBackground || words[0].role === 'x-bg');
-        finalWords = fillChannelGaps(words, isBg);
-      }
-
-      words.length = 0;
-      words.push(...finalWords);
     }
 
     let text = '';

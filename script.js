@@ -2832,6 +2832,201 @@ $('tool-fill-gaps').onclick=()=>{
   lines.forEach(c=>{if(c.words&&c.words.length){c.words[0].startMs=c.startMs;for(let i=0;i<c.words.length-1;i++)c.words[i].endMs=c.words[i+1].startMs;c.words[c.words.length-1].endMs=c.endMs;}});
   pushHistory();renderTimeline();$('tools-menu').classList.remove('open');
 };
+
+function convertEmptyLinesToGhostWords() {
+  if (lines.length === 0) return;
+  lines.sort((a, b) => a.startMs - b.startMs);
+
+  function isLineBlankEmpty(l) {
+    const hasRealWords = l.words && l.words.some(w => {
+      const t = (w.text || "").trim();
+      return t !== "" && t !== "\\" && t !== "[Empty]";
+    });
+    if (hasRealWords) return false;
+    const lineText = (l.text || "").trim();
+    return !lineText || lineText === "[Empty]";
+  }
+
+  const checks = document.querySelectorAll('.line-checkbox:checked');
+  const sIds = Array.from(checks).map(c => Number(c.dataset.id));
+  const hasSelection = sIds.length > 0;
+
+  let convertedCount = 0;
+  const newLines = [];
+  let prevLyricLine = null;
+  let maxId = lines.reduce((m, l) => Math.max(m, Number(l.id) || 0), 0);
+
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    const isSelected = !hasSelection || sIds.includes(l.id);
+
+    if (isLineBlankEmpty(l) && isSelected) {
+      // Do not convert if there is no preceding lyric line above it
+      if (!prevLyricLine) {
+        newLines.push(l);
+      } else {
+        const ghostStart = l.startMs;
+        const ghostEnd = Math.max(l.endMs, ghostStart + 100);
+
+        if (!prevLyricLine.words || prevLyricLine.words.length === 0) {
+          prevLyricLine.words = [{
+            id: ++maxId,
+            text: prevLyricLine.text || "",
+            startMs: prevLyricLine.startMs,
+            endMs: prevLyricLine.endMs,
+            isBackground: !!(prevLyricLine.isBackground || prevLyricLine.role === 'x-bg'),
+            role: prevLyricLine.role || null,
+            agent: prevLyricLine.agent || null
+          }];
+        }
+
+        const lastWord = prevLyricLine.words[prevLyricLine.words.length - 1];
+        if (ghostStart > lastWord.endMs + 10) {
+          prevLyricLine.words.push({
+            id: ++maxId,
+            text: "",
+            startMs: lastWord.endMs,
+            endMs: ghostStart,
+            isBackground: !!(prevLyricLine.isBackground || prevLyricLine.role === 'x-bg'),
+            role: prevLyricLine.role || null,
+            agent: prevLyricLine.agent || null
+          });
+        }
+
+        prevLyricLine.words.push({
+          id: ++maxId,
+          text: "",
+          startMs: ghostStart,
+          endMs: ghostEnd,
+          isBackground: !!(prevLyricLine.isBackground || prevLyricLine.role === 'x-bg'),
+          role: prevLyricLine.role || null,
+          agent: prevLyricLine.agent || null
+        });
+
+        prevLyricLine.endMs = Math.max(prevLyricLine.endMs, ghostEnd);
+        convertedCount++;
+      }
+    } else {
+      newLines.push(l);
+      if (!isLineBlankEmpty(l)) {
+        prevLyricLine = l;
+      }
+    }
+  }
+
+  if (convertedCount > 0) {
+    lines = newLines;
+    pushHistory();
+    renderTimeline();
+    showToast(`Converted ${convertedCount} empty line(s) to ghost word-blocks.`, 'success');
+  } else {
+    showToast("No convertible empty lines found.", 'info');
+  }
+}
+
+function convertGhostWordsToEmptyLines() {
+  if (lines.length === 0) return;
+  lines.sort((a, b) => a.startMs - b.startMs);
+
+  function isWordBlankGhost(w) {
+    const t = (w.text || "").trim();
+    return !t || t === "\\" || t === "[Empty]";
+  }
+
+  const checks = document.querySelectorAll('.line-checkbox:checked');
+  const sIds = Array.from(checks).map(c => Number(c.dataset.id));
+  const hasSelection = sIds.length > 0;
+
+  let convertedCount = 0;
+  const newLines = [];
+  let maxId = lines.reduce((m, l) => Math.max(m, Number(l.id) || 0), 0);
+
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    const isSelected = !hasSelection || sIds.includes(l.id);
+
+    if (!l.words || l.words.length === 0 || !isSelected) {
+      newLines.push(l);
+      continue;
+    }
+
+    const hasGhosts = l.words.some(isWordBlankGhost);
+    if (!hasGhosts) {
+      newLines.push(l);
+      continue;
+    }
+
+    // Partition words into consecutive segments of 'real' and 'ghost' words
+    const segments = [];
+    let curSegment = null;
+
+    l.words.forEach(w => {
+      const isGhost = isWordBlankGhost(w);
+      const segType = isGhost ? 'ghost' : 'real';
+
+      if (!curSegment || curSegment.type !== segType) {
+        curSegment = { type: segType, words: [w] };
+        segments.push(curSegment);
+      } else {
+        curSegment.words.push(w);
+      }
+    });
+
+    segments.forEach(seg => {
+      if (seg.type === 'ghost') {
+        const segStart = seg.words[0].startMs;
+        const segEnd = seg.words[seg.words.length - 1].endMs;
+        newLines.push({
+          id: ++maxId,
+          startMs: segStart,
+          endMs: Math.max(segEnd, segStart + 100),
+          text: "",
+          words: []
+        });
+        convertedCount += seg.words.length;
+      } else {
+        const segStart = seg.words[0].startMs;
+        const segEnd = seg.words[seg.words.length - 1].endMs;
+        const segText = seg.words.map(w => w.text).filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+        newLines.push({
+          id: ++maxId,
+          startMs: segStart,
+          endMs: segEnd,
+          text: segText,
+          words: seg.words,
+          isBackground: l.isBackground,
+          role: l.role || null,
+          agent: l.agent || null,
+          songPart: l.songPart || null
+        });
+      }
+    });
+  }
+
+  if (convertedCount > 0) {
+    lines = newLines;
+    pushHistory();
+    renderTimeline();
+    showToast(`Converted ${convertedCount} ghost word-block(s) to empty lines.`, 'success');
+  } else {
+    showToast("No ghost word-blocks found to convert.", 'info');
+  }
+}
+
+if ($('tool-empty-lines-to-ghost-words')) {
+  $('tool-empty-lines-to-ghost-words').onclick = () => {
+    convertEmptyLinesToGhostWords();
+    $('tools-menu').classList.remove('open');
+  };
+}
+
+if ($('tool-ghost-words-to-empty-lines')) {
+  $('tool-ghost-words-to-empty-lines').onclick = () => {
+    convertGhostWordsToEmptyLines();
+    $('tools-menu').classList.remove('open');
+  };
+}
+
 $('tool-remove-word-overlaps').onclick=()=>{
   lines.forEach(l=>{
     if(l.words && l.words.length > 0){
@@ -3302,13 +3497,23 @@ function formatWordsForEdit(line) {
   }
   
   const isLineBg = !!(line.isBackground || line.role === 'x-bg');
+  const hasBgWords = line.words.some(w => w.isBackground || w.role === 'x-bg');
+  const hasLineOrBg = isLineBg || hasBgWords;
+
   let formatted = [];
   let inBgGroup = false;
 
   for (let i = 0; i < line.words.length; i++) {
     const w = line.words[i];
-    let wText = (w.text !== undefined && w.text !== null && w.text !== "") ? w.text : "\\";
     const isBg = !!(w.isBackground || w.role === 'x-bg' || isLineBg);
+    const isBlankGhost = (w.text === undefined || w.text === null || w.text === "" || w.text === "\\");
+
+    // Hide auto-created ghost words on lines that have background vocals (or for background vocal ghost words)
+    if (isBlankGhost && (isBg || hasLineOrBg)) {
+      continue;
+    }
+
+    let wText = (w.text !== undefined && w.text !== null && w.text !== "") ? w.text : "\\";
     
     const hasOpen = wText.startsWith('(');
     const hasClose = wText.endsWith(')');
@@ -3396,8 +3601,13 @@ $('et-apply').onclick = () => {
       return;
     }
 
+    const hasBgWords = editingLine.words && editingLine.words.some(w => w.isBackground || w.role === 'x-bg');
+    const isLineOrBg = isLineBg || hasBgWords;
+
     const oldWords = (editingLine.words && editingLine.words.length > 0)
-        ? editingLine.words
+        ? (isLineOrBg
+            ? editingLine.words.filter(w => w.text !== undefined && w.text !== null && w.text !== "" && w.text !== "\\")
+            : editingLine.words)
         : editingLine.text.trim().split(/\s+/).filter(t => t).map((t, i, arr) => {
             const p = (editingLine.endMs - editingLine.startMs) / arr.length;
             const tClean = t.replace(/[\(\)]/g, '');
