@@ -13,7 +13,18 @@ A professional-grade, browser-based word-level lyrics and subtitle editor. Desig
 ## ✨ Features
 
 - **Word-Level Precision**: Adjust timings for individual words using an intuitive drag-and-drop timeline.
-- **Multi-Format Support**: Import and export a wide variety of subtitle and karaoke formats.
+- **Per-Word Confidence Scoring & Review**:
+    - Visual confidence badges for low-confidence alignment words (<75% amber dash, <50% red tint).
+    - Header indicator showing total flagged words with one-click navigation and keyboard shortcuts (**Alt+N** / **Alt+P**) to review low-confidence words rapidly.
+- **Universal Ghost Word-Block Gap Filling**:
+    - Automatically bridges gaps between timestamps across all word-level formats (TTML, `.lyricsfile`, JSON, SRV2/3) with ghost word-blocks (`text: ""`).
+    - Keeps word-blocks in each line connected edge-to-edge for continuous dragging, resizing, boundary snapping, and playback transitions.
+    - Automatically filters empty ghost blocks on export for clean, spec-compliant output.
+- **Enhanced `.lyricsfile` & YAML Support**:
+    - Native support for `.lyricsfile`, `.lyricsfile.yaml`, `.yaml`, and `.yml`.
+    - Preserves per-word `confidence` / `score`, vocal agents, background vocals, and explicit `start_ms` / `end_ms`.
+    - Tolerant parsing for omitted `end_ms` (interpolated automatically) and empty arrays (`words: []`, `words: null`, `words: ~`).
+- **Multi-Format Support**: Import and export a wide variety of subtitle, lyrics, and karaoke formats.
 - **Advanced Timeline**:
     - Interactive waveform-style word blocks.
     - **Real-Time Waveform Background**: Visualizes audio peaks directly behind word blocks for ultra-precise timing.
@@ -62,21 +73,21 @@ https://github.com/user-attachments/assets/d695af6c-2de2-4083-954b-ee181cbc72d0
 ## 📥 Supported Formats
 
 ### Import
-- LRC (Standard & Enhanced)
+- LRC (Standard & Enhanced with Background Vocals)
 - SRT (SubRip)
 - VTT (WebVTT)
-- TTML (Timed Text Markup Language / Apple iTunes)
+- TTML (Timed Text Markup Language / Apple iTunes / Apple Music)
+- LRCLIB & LyricsFile (`.lyricsfile`, `.lyricsfile.yaml`, `.yaml`, `.yml`)
+- Bidirectional JSON (.json with Confidence & Agents)
 - YouTube XML (SRV1, SRV2, SRV3)
 - YouTube JSON3
-- Bidirectional JSON (.json)
-- LRCLIB (.lyricsfile)
 - Audacity Labels (.txt)
 - Plain Text (.txt)
 
 ### Export
 - **Subtitles**: LRC, SRT, VTT, TTML, Apple TTML (iTunes), Audacity Labels
-- **Karaoke (Word-Level)**: Enhanced LRC, VTT (Words), TTML (Words), Apple TTML (Words), YouTube SRV3 (Words), Audacity Labels (Words)
-- **Other**: YouTube SRV1/SRV2/SRV3, JSON (Bidirectional), YouTube JSON3, LRCLIB, Plain Text
+- **Karaoke (Word-Level)**: Enhanced LRC, VTT (Words), TTML (Words), Apple TTML (Words), LRCLIB / LyricsFile (`.lyricsfile.yaml`), YouTube SRV3 (Words), Audacity Labels (Words)
+- **Other**: YouTube SRV1/SRV2/SRV3, JSON (Bidirectional with Confidence), YouTube JSON3, LRCLIB, Plain Text
 
 ## 🎵 Audio Precision & Sync
 
@@ -131,6 +142,8 @@ These advanced tools are designed to fix one of the most common issues in lyric 
 | Shortcut | Action |
 | :--- | :--- |
 | **1 / 2** | Load Audio / Load Lyrics |
+| **Alt + N** | **Next Flagged Word** (Jump to next low-confidence word) |
+| **Alt + P** | **Prev Flagged Word** (Jump to previous low-confidence word) |
 | **E** | **Quick Export** (Prioritizes Word-Level/Karaoke formats) |
 | **S** | Focus Search Box |
 | **H** | Open Find & Replace |
@@ -144,6 +157,32 @@ These advanced tools are designed to fix one of the most common issues in lyric 
 | **Esc** | Close Modals / Clear Search focus |
 
 ## 🌟 What's New
+
+### v0.1.1
+
+- **Per-Word Confidence Scoring & Rapid Review Navigation**:
+  - Highlights alignment confidence directly on word blocks (<75% amber dash, <50% red tint).
+  - Added dedicated header badge and navigation controls with **Alt+N** (Next) and **Alt+P** (Prev) shortcuts for rapid review of low-confidence words during or after audio playback.
+- **Universal Ghost Word-Block Gap Filling on Import**:
+  - Automatically bridges gaps between timestamps across all word-level formats (`TTML`, `.lyricsfile.yaml`, `JSON`, `SRV2/3`) with ghost word-blocks (`text: ""`).
+  - Keeps word blocks in each line connected edge-to-edge for smooth timeline dragging, resizing, boundary snapping, and playback transitions.
+  - Automatically filters ghost blocks on export so output files remain standard-compliant with only sung lyric spans.
+- **Enhanced `.lyricsfile.yaml` & YAML Engine**:
+  - Native line-by-line / indentation-aware parser for `.lyricsfile`, `.lyricsfile.yaml`, `.yaml`, and `.yml`.
+  - Preserves per-word `confidence` / `score`, vocal agents, background vocal flags, and explicit `start_ms` / `end_ms`.
+  - Tolerates omitted `end_ms` with automatic boundary interpolation, and handles empty word arrays (`words: []`, `words: null`, `words: ~`).
+- **Enhanced Background Vocal Editing & Smart Tokenization**:
+  - Resolved word-block disconnection issues when editing background vocal lines with spaces around parentheses (e.g. `( test )`, `( word1 word2 )`).
+  - Parentheses are extracted cleanly as channel delimiters without generating phantom word-blocks or corrupting word timings.
+- **Active Word Detection & Playback Navigation Fix**:
+  - Fixed timestamp scale calculation and active word boundary tracking so `Alt+N` and `Alt+P` jump accurately forward and backward even during active audio playback.
+
+### v0.1.0
+
+- **UI/UX Improvements & Refinements**:
+  - Comprehensive UI/UX testing and evaluation with the **KIMI K3** model.
+  - Enhanced layout ergonomics and visual polish across the timeline, modals, and toolbar controls.
+  - Optimized interactive feedback, transitions, and responsive adaptations for dense editing sessions.
 
 ### v0.0.9
 

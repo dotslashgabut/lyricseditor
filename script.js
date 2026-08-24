@@ -387,7 +387,17 @@ function renderTimeline() {
       const isActuallyBlank = !wText || wText === "\\" || wText === "[Empty]";
       if(isActuallyBlank) el.classList.add('blank-word');
       
-      el.innerHTML=`<div class="resize-handle left"></div><div class="word-text">${escapeHtml(w.text || "")}</div><div class="word-duration">${((w.endMs-w.startMs)/1000).toFixed(3)}s</div><div class="resize-handle right"></div>`;
+      let confBadgeHtml = '';
+      const confVal = getWordConfidence(w);
+      if (confVal !== null) {
+        if (confVal < 75) {
+          el.classList.add('low-confidence');
+          if (confVal < 50) el.classList.add('very-low-confidence');
+        }
+        confBadgeHtml = `<div class="word-confidence" title="Confidence: ${confVal}%">${confVal}%</div>`;
+      }
+
+      el.innerHTML=`<div class="resize-handle left"></div><div class="word-text">${escapeHtml(w.text || "")}</div>${confBadgeHtml}<div class="word-duration">${((w.endMs-w.startMs)/1000).toFixed(3)}s</div><div class="resize-handle right"></div>`;
       tc.appendChild(el);
       posWord(el, w, line);
       bindDrag(el, w, line, tc, w.isPl);
@@ -407,10 +417,8 @@ function renderTimeline() {
     tr.querySelector('.track-tag-btn').onclick = () => { openLineAttrModal(line); };
     tr.querySelector('.track-edit-btn').onclick = () => {
       editingLine = line;
-      // Show \ for blank words so users can preserve them
-      $('edit-text-input').value = (line.words && line.words.length > 0) 
-        ? line.words.map(w => w.text || "\\").join(' ') 
-        : line.text.replace(/\s+/g, ' ').trim();
+      // Show \ for blank words so users can preserve them, and format background vocals
+      $('edit-text-input').value = formatWordsForEdit(line);
       $('edit-keep-structure').checked = false; // Default OFF
       updateEditHighlighter();
       
@@ -447,10 +455,108 @@ function renderTimeline() {
   }
 
   statL.textContent=lines.length; statW.textContent=tw;
+
+  let flaggedCount = 0;
+  lines.forEach(l => {
+    if (l.words) {
+      l.words.forEach(w => {
+        const confVal = getWordConfidence(w);
+        if (confVal !== null && confVal < 75) flaggedCount++;
+      });
+    }
+  });
+  const flagControls = $('confidence-flag-controls');
+  const flagCountEl = $('confidence-flag-text');
+  if (flagControls && flagCountEl) {
+    if (flaggedCount > 0) {
+      flagControls.style.display = 'inline-flex';
+      flagCountEl.textContent = `${flaggedCount} Flagged`;
+    } else {
+      flagControls.style.display = 'none';
+    }
+  }
+
   applySearchFilter();
   updateDisplay();
   updateSelectionCount();
   container.scrollTop = oldScroll;
+}
+
+function getWordConfidence(w) {
+  if (!w) return null;
+  const c = w.confidence !== undefined && w.confidence !== null ? w.confidence : w.score;
+  if (c === undefined || c === null || c === "") return null;
+  const num = typeof c === 'number' ? c : parseFloat(c);
+  if (isNaN(num)) return null;
+  return (num <= 1) ? Math.round(num * 100) : Math.round(num);
+}
+
+let currentFlaggedWordId = null;
+
+function jumpFlaggedWord(direction = 1) {
+  const flagged = [];
+  lines.forEach(l => {
+    (l.words || []).forEach(w => {
+      const confVal = getWordConfidence(w);
+      if (confVal !== null && confVal < 75) {
+        flagged.push({ line: l, word: w, confVal });
+      }
+    });
+  });
+
+  if (flagged.length === 0) {
+    showToast("No low-confidence words found in project.", "info");
+    return;
+  }
+
+  // Sort by startMs, then by id for deterministic ordering
+  flagged.sort((a, b) => a.word.startMs - b.word.startMs || String(a.word.id).localeCompare(String(b.word.id)));
+
+  let targetIdx = -1;
+
+  // 1. If we are currently tracking an active flagged word in the list
+  const currentIdx = flagged.findIndex(f => f.word.id === currentFlaggedWordId);
+
+  if (currentIdx !== -1) {
+    const currentWord = flagged[currentIdx].word;
+    // If playhead is near the current flagged word (within 3.5s window), step to the next/prev index cleanly
+    if (Math.abs(currentTime - currentWord.startMs) < 3500) {
+      targetIdx = (currentIdx + direction + flagged.length) % flagged.length;
+    }
+  }
+
+  // 2. If no word tracked or user scrubbed far away to a different part of the song
+  if (targetIdx === -1) {
+    if (direction > 0) {
+      targetIdx = flagged.findIndex(f => f.word.startMs > currentTime + 30);
+      if (targetIdx === -1) targetIdx = 0; // Wrap to first
+    } else {
+      for (let i = flagged.length - 1; i >= 0; i--) {
+        if (flagged[i].word.startMs < currentTime - 30) {
+          targetIdx = i;
+          break;
+        }
+      }
+      if (targetIdx === -1) targetIdx = flagged.length - 1; // Wrap to last
+    }
+  }
+
+  const target = flagged[targetIdx];
+  currentFlaggedWordId = target.word.id;
+  seekMs(target.word.startMs);
+
+  const tr = $(`tc-${target.line.id}`);
+  if (tr) {
+    tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  const we = $(`w-${target.word.id}`);
+  if (we) {
+    we.classList.add('pulse-focus');
+    setTimeout(() => we.classList.remove('pulse-focus'), 1400);
+  }
+
+  showToast(`Flagged Word (${targetIdx + 1}/${flagged.length}): "${target.word.text.trim()}" (${target.confVal}% conf)`, 'warning', 2000);
 }
 
 function observeWaveforms() {
@@ -2906,7 +3012,7 @@ function updateSelectionCount() {
     });
 
     if (label) {
-        label.textContent = checked.length === 0 ? "Select All / None" : `Select All / None (${checked.length})`;
+        label.textContent = checked.length === 0 ? "All / None" : `All / None (${checked.length})`;
     }
     if (delLabel) {
         delLabel.textContent = checked.length === 0 ? "Delete Selected" : `Delete Selected (${checked.length})`;
@@ -3186,34 +3292,121 @@ $('sw-dec').onclick = () => {
     }
 };
 
+function formatWordsForEdit(line) {
+  if (!line.words || line.words.length === 0) {
+    let txt = line.text ? line.text.replace(/\s+/g, ' ').trim() : "";
+    if (line.isBackground || line.role === 'x-bg') {
+      if (!txt.startsWith('(') && !txt.endsWith(')')) txt = `(${txt})`;
+    }
+    return txt;
+  }
+  
+  const isLineBg = !!(line.isBackground || line.role === 'x-bg');
+  let formatted = [];
+  let inBgGroup = false;
+
+  for (let i = 0; i < line.words.length; i++) {
+    const w = line.words[i];
+    let wText = (w.text !== undefined && w.text !== null && w.text !== "") ? w.text : "\\";
+    const isBg = !!(w.isBackground || w.role === 'x-bg' || isLineBg);
+    
+    const hasOpen = wText.startsWith('(');
+    const hasClose = wText.endsWith(')');
+
+    if (isBg && !inBgGroup && !hasOpen) {
+      formatted.push('(' + wText);
+      inBgGroup = true;
+    } else if (!isBg && inBgGroup) {
+      if (formatted.length > 0 && !formatted[formatted.length - 1].endsWith(')')) {
+        formatted[formatted.length - 1] += ')';
+      }
+      inBgGroup = false;
+      formatted.push(wText);
+    } else {
+      formatted.push(wText);
+    }
+
+    if (hasClose && inBgGroup) {
+      inBgGroup = false;
+    }
+  }
+
+  if (inBgGroup && formatted.length > 0 && !formatted[formatted.length - 1].endsWith(')')) {
+    formatted[formatted.length - 1] += ')';
+  }
+
+  return formatted.join(' ');
+}
+
+function parseEditTokens(inputVal, lineIsBg = false) {
+  const rawParts = inputVal.replace(/([\\])/g, ' $1 ').split(/\s+/).filter(t => t);
+  const tokens = [];
+  let inParenthesis = false;
+
+  for (let i = 0; i < rawParts.length; i++) {
+    let t = rawParts[i];
+    
+    let openCount = 0;
+    while (t.startsWith('(')) {
+      openCount++;
+      t = t.slice(1);
+    }
+    
+    let closeCount = 0;
+    while (t.endsWith(')')) {
+      closeCount++;
+      t = t.slice(0, -1);
+    }
+
+    if (openCount > 0) {
+      inParenthesis = true;
+    }
+
+    const currentBg = inParenthesis || lineIsBg;
+
+    if (t !== '') {
+      tokens.push({
+        text: (t === '\\') ? '' : t,
+        rawText: t,
+        isBackground: currentBg,
+        tokenIdx: tokens.length
+      });
+    }
+
+    if (closeCount > 0) {
+      inParenthesis = false;
+    }
+  }
+
+  return tokens;
+}
+
 $('et-apply').onclick = () => {
   const inputVal = $('edit-text-input').value.trim();
   if (editingLine) {
-    // Fix tokenization: ensure \ and " are treated as separate tokens even if attached to words
-    const newTokens = inputVal.replace(/([\\])/g, ' $1 ').split(/\s+/).filter(t => t);
+    const isLineBg = !!(editingLine.isBackground || editingLine.role === 'x-bg');
+    const newTokens = parseEditTokens(inputVal, isLineBg);
     
-    // Helper to determine background vocal state by token index in newTokens
-    function isBgToken(idx) {
-      let inParenthesis = false;
-      for (let i = 0; i <= idx; i++) {
-        const t = newTokens[i];
-        if (t.startsWith('(')) inParenthesis = true;
-        const wasBg = inParenthesis;
-        if (t.endsWith(')')) inParenthesis = false;
-        if (i === idx) return wasBg || !!editingLine.isBackground;
-      }
-      return !!editingLine.isBackground;
+    if (newTokens.length === 0) {
+      editingLine.words = [];
+      editingLine.text = "";
+      pushHistory(); renderTimeline();
+      $('edit-text-modal').style.display = 'none';
+      editingLine = null;
+      return;
     }
 
     const oldWords = (editingLine.words && editingLine.words.length > 0)
         ? editingLine.words
         : editingLine.text.trim().split(/\s+/).filter(t => t).map((t, i, arr) => {
             const p = (editingLine.endMs - editingLine.startMs) / arr.length;
+            const tClean = t.replace(/[\(\)]/g, '');
             return {
                 id: `tmp-${Date.now()}-${i}`,
-                text: t,
+                text: tClean,
                 startMs: Math.round(editingLine.startMs + p * i),
-                endMs: Math.round(editingLine.startMs + p * (i + 1))
+                endMs: Math.round(editingLine.startMs + p * (i + 1)),
+                isBackground: isLineBg || (t.startsWith('(') && t.endsWith(')'))
             };
         });
 
@@ -3222,10 +3415,10 @@ $('et-apply').onclick = () => {
     // 1-to-1 bypass if word counts match exactly AND Keep Word Timings is checked
     if (newTokens.length === oldWords.length && keepStructure) {
       const resultWords = oldWords.map((w, i) => {
-        const isBg = isBgToken(i);
+        const isBg = newTokens[i].isBackground;
         return {
           ...w,
-          text: (newTokens[i] === '\\') ? "" : newTokens[i],
+          text: (newTokens[i].text === '\\') ? "" : newTokens[i].text,
           isBackground: isBg,
           role: isBg ? 'x-bg' : null,
           tokenIdx: i
@@ -3252,12 +3445,14 @@ $('et-apply').onclick = () => {
     const bgTokens = [];
     newTokens.forEach((t, i) => {
       const tObj = {
-        text: t,
+        text: t.text,
+        rawText: t.rawText,
+        isBackground: t.isBackground,
         tokenIdx: i,
         defaultStartMs: defaultTimings[i].startMs,
         defaultEndMs: defaultTimings[i].endMs
       };
-      if (isBgToken(i)) {
+      if (t.isBackground) {
         bgTokens.push(tObj);
       } else {
         mainTokens.push(tObj);
@@ -3276,24 +3471,34 @@ $('et-apply').onclick = () => {
 
     oldWords.forEach(w => {
       const wClean = cleanTextForMatch(w.text);
+      const isOldBg = !!(w.isBackground || w.role === 'x-bg');
+
       let matchedIdx = -1;
       for (let j = 0; j < newTokens.length; j++) {
-        if (!usedTokenIdxs.has(j) && cleanTextForMatch(newTokens[j]) === wClean) {
+        if (!usedTokenIdxs.has(j) && newTokens[j].isBackground === isOldBg && cleanTextForMatch(newTokens[j].text) === wClean) {
           matchedIdx = j;
           break;
+        }
+      }
+      if (matchedIdx === -1) {
+        for (let j = 0; j < newTokens.length; j++) {
+          if (!usedTokenIdxs.has(j) && cleanTextForMatch(newTokens[j].text) === wClean) {
+            matchedIdx = j;
+            break;
+          }
         }
       }
 
       if (matchedIdx !== -1) {
         usedTokenIdxs.add(matchedIdx);
-        if (isBgToken(matchedIdx)) {
+        if (newTokens[matchedIdx].isBackground) {
           oldBgWords.push(w);
         } else {
           oldMainWords.push(w);
         }
       } else {
         // Fallback for deleted words: place in their original channel
-        if (w.isBackground || w.role === 'x-bg') {
+        if (isOldBg) {
           oldBgWords.push(w);
         } else {
           oldMainWords.push(w);
@@ -3463,18 +3668,18 @@ $('et-apply').onclick = () => {
         const dp = Array.from({length: n+1}, () => Array(m+1).fill(0));
         for (let i=1; i<=n; i++) {
           for (let j=1; j<=m; j++) {
-            const w1 = arr1[i-1].text.toLowerCase();
-            const w2 = arr2[j-1].text.toLowerCase();
-            const isMatch = (w1 === w2) || (w1 === "" && (w2 === "\\"));
+            const w1 = cleanTextForMatch(arr1[i-1].text);
+            const w2 = cleanTextForMatch(arr2[j-1].text);
+            const isMatch = (w1 === w2) || (w1 === "" && (w2 === "" || w2 === "\\"));
             if (isMatch) dp[i][j] = dp[i-1][j-1] + 1;
             else dp[i][j] = Math.max(dp[i-1][j], dp[i][j-1]);
           }
         }
         const res = []; let i=n, j=m;
         while (i>0 && j>0) {
-          const w1 = arr1[i-1].text.toLowerCase();
-          const w2 = arr2[j-1].text.toLowerCase();
-          const isMatch = (w1 === w2) || (w1 === "" && (w2 === "\\"));
+          const w1 = cleanTextForMatch(arr1[i-1].text);
+          const w2 = cleanTextForMatch(arr2[j-1].text);
+          const isMatch = (w1 === w2) || (w1 === "" && (w2 === "" || w2 === "\\"));
           if (isMatch) {
             res.unshift({oldIdx: i-1, newIdx: j-1}); i--; j--;
           } else if (dp[i-1][j] > dp[i][j-1]) i--; else j--;
@@ -3668,6 +3873,16 @@ function centerActiveLine() {
 
 $('btn-prev-line').onclick=()=> jumpLines(-1);
 $('btn-next-line').onclick=()=> jumpLines(1);
+if ($('btn-prev-flagged')) $('btn-prev-flagged').onclick = (e) => { e.stopPropagation(); jumpFlaggedWord(-1); };
+if ($('btn-next-flagged')) $('btn-next-flagged').onclick = (e) => { e.stopPropagation(); jumpFlaggedWord(1); };
+if ($('confidence-flag-controls')) {
+  $('confidence-flag-controls').style.cursor = 'pointer';
+  $('confidence-flag-controls').onclick = (e) => {
+    if (e.target.closest('#btn-prev-flagged')) return;
+    if (e.target.closest('#btn-next-flagged')) return;
+    jumpFlaggedWord(1);
+  };
+}
 
 function jumpLines(delta) {
     if(!lines.length) return;
@@ -3702,6 +3917,13 @@ window.addEventListener('keydown', e => {
   }
 
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+  // Handle Alt key combinations (e.g. Alt+N / Alt+P for flagged low-confidence words)
+  if (e.altKey && !isMod) {
+    const key = (e.key || '').toLowerCase();
+    if (key === 'n' || e.code === 'KeyN') { e.preventDefault(); jumpFlaggedWord(1); return; }
+    if (key === 'p' || e.code === 'KeyP') { e.preventDefault(); jumpFlaggedWord(-1); return; }
+  }
 
   // 1. Handle specific Mod-key combinations first
   if (isMod) {
@@ -4073,7 +4295,7 @@ document.addEventListener('drop', e => {
     let lyricsToLoad = null, lyricsCount = 0;
 
     const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'webm', 'mp4', 'aif', 'aiff'];
-    const lyricsExts = ['lrc', 'srt', 'vtt', 'txt', 'json', 'xml', 'ttml', 'lyricsfile', 'srv1', 'srv2', 'srv3'];
+    const lyricsExts = ['lrc', 'srt', 'vtt', 'txt', 'json', 'xml', 'ttml', 'lyricsfile', 'yaml', 'yml', 'srv1', 'srv2', 'srv3'];
 
     for (const f of files) {
         const ext = f.name.split('.').pop().toLowerCase();
