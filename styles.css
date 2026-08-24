@@ -164,9 +164,15 @@ html, body {
 }
 
 .fname {
-    max-width: 140px;
-    min-width: 50px;
+    max-width: 95px;
+    min-width: 35px;
     display: inline-block;
+}
+
+@media (min-width: 1600px) {
+    .fname {
+        max-width: 130px;
+    }
 }
 
 /* Old search box styles removed to resolve conflicts */

@@ -388,8 +388,8 @@ function renderTimeline() {
       if(isActuallyBlank) el.classList.add('blank-word');
       
       let confBadgeHtml = '';
-      if (w.confidence !== undefined && w.confidence !== null) {
-        const confVal = (w.confidence <= 1) ? Math.round(w.confidence * 100) : Math.round(w.confidence);
+      const confVal = getWordConfidence(w);
+      if (confVal !== null) {
         if (confVal < 75) {
           el.classList.add('low-confidence');
           if (confVal < 50) el.classList.add('very-low-confidence');
@@ -460,10 +460,8 @@ function renderTimeline() {
   lines.forEach(l => {
     if (l.words) {
       l.words.forEach(w => {
-        if (w.confidence !== undefined && w.confidence !== null) {
-          const confVal = (w.confidence <= 1) ? Math.round(w.confidence * 100) : Math.round(w.confidence);
-          if (confVal < 75) flaggedCount++;
-        }
+        const confVal = getWordConfidence(w);
+        if (confVal !== null && confVal < 75) flaggedCount++;
       });
     }
   });
@@ -484,17 +482,24 @@ function renderTimeline() {
   container.scrollTop = oldScroll;
 }
 
-let lastJumpedFlaggedIdx = -1;
+function getWordConfidence(w) {
+  if (!w) return null;
+  const c = w.confidence !== undefined && w.confidence !== null ? w.confidence : w.score;
+  if (c === undefined || c === null || c === "") return null;
+  const num = typeof c === 'number' ? c : parseFloat(c);
+  if (isNaN(num)) return null;
+  return (num <= 1) ? Math.round(num * 100) : Math.round(num);
+}
+
+let currentFlaggedWordId = null;
 
 function jumpFlaggedWord(direction = 1) {
   const flagged = [];
   lines.forEach(l => {
     (l.words || []).forEach(w => {
-      if (w.confidence !== undefined && w.confidence !== null) {
-        const confVal = (w.confidence <= 1) ? Math.round(w.confidence * 100) : Math.round(w.confidence);
-        if (confVal < 75) {
-          flagged.push({ line: l, word: w, confVal });
-        }
+      const confVal = getWordConfidence(w);
+      if (confVal !== null && confVal < 75) {
+        flagged.push({ line: l, word: w, confVal });
       }
     });
   });
@@ -504,34 +509,30 @@ function jumpFlaggedWord(direction = 1) {
     return;
   }
 
-  flagged.sort((a, b) => a.word.startMs - b.word.startMs);
+  // Sort by startMs, then by id for deterministic ordering
+  flagged.sort((a, b) => a.word.startMs - b.word.startMs || String(a.word.id).localeCompare(String(b.word.id)));
 
-  const currentMs = currentTime;
   let targetIdx = -1;
 
-  // 1. Check if we are currently inside or right at one of the flagged words
-  let activeFlaggedIdx = flagged.findIndex(f => 
-    (currentMs >= f.word.startMs - 80 && currentMs <= Math.max(f.word.endMs, f.word.startMs + 400) + 80)
-  );
+  // 1. If we are currently tracking an active flagged word in the list
+  const currentIdx = flagged.findIndex(f => f.word.id === currentFlaggedWordId);
 
-  // If recently jumped and audio has only progressed slightly within the same region
-  if (activeFlaggedIdx === -1 && lastJumpedFlaggedIdx >= 0 && lastJumpedFlaggedIdx < flagged.length) {
-    const lastWord = flagged[lastJumpedFlaggedIdx].word;
-    if (currentMs >= lastWord.startMs - 100 && currentMs <= lastWord.startMs + 3000) {
-      activeFlaggedIdx = lastJumpedFlaggedIdx;
+  if (currentIdx !== -1) {
+    const currentWord = flagged[currentIdx].word;
+    // If playhead is near the current flagged word (within 3.5s window), step to the next/prev index cleanly
+    if (Math.abs(currentTime - currentWord.startMs) < 3500) {
+      targetIdx = (currentIdx + direction + flagged.length) % flagged.length;
     }
   }
 
-  if (activeFlaggedIdx !== -1) {
-    targetIdx = (activeFlaggedIdx + direction + flagged.length) % flagged.length;
-  } else {
-    // Playhead is between flagged words (or in a non-flagged section)
+  // 2. If no word tracked or user scrubbed far away to a different part of the song
+  if (targetIdx === -1) {
     if (direction > 0) {
-      targetIdx = flagged.findIndex(f => f.word.startMs > currentMs);
+      targetIdx = flagged.findIndex(f => f.word.startMs > currentTime + 30);
       if (targetIdx === -1) targetIdx = 0; // Wrap to first
     } else {
       for (let i = flagged.length - 1; i >= 0; i--) {
-        if (flagged[i].word.endMs < currentMs || flagged[i].word.startMs < currentMs - 100) {
+        if (flagged[i].word.startMs < currentTime - 30) {
           targetIdx = i;
           break;
         }
@@ -540,9 +541,8 @@ function jumpFlaggedWord(direction = 1) {
     }
   }
 
-  lastJumpedFlaggedIdx = targetIdx;
-
   const target = flagged[targetIdx];
+  currentFlaggedWordId = target.word.id;
   seekMs(target.word.startMs);
 
   const tr = $(`tc-${target.line.id}`);
@@ -3012,7 +3012,7 @@ function updateSelectionCount() {
     });
 
     if (label) {
-        label.textContent = checked.length === 0 ? "Select All / None" : `Select All / None (${checked.length})`;
+        label.textContent = checked.length === 0 ? "All / None" : `All / None (${checked.length})`;
     }
     if (delLabel) {
         delLabel.textContent = checked.length === 0 ? "Delete Selected" : `Delete Selected (${checked.length})`;
