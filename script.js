@@ -3114,13 +3114,19 @@ $('tool-compact-ws').onclick=()=>{
 function performHotFix() {
   waveformCache.clear();
   
+  function hasLineBg(l) {
+    return !!(l.isBackground || l.role === 'x-bg' || (l.words && l.words.some(w => w.isBackground || w.role === 'x-bg')));
+  }
+
   // 1. Text & Basic cleanup
   lines.forEach(l => {
     l.text = (l.text || "").replace(/\s+/g,' ').trim();
     if(l.words) {
       l.words.forEach(w => w.text = (w.text || "").trim());
-      // 2. Advanced Word-level merging (Remove Blanks & Merge Duration)
-      mergeEmptyWordsInLine(l);
+      // 2. Advanced Word-level merging (only for lines without background vocals)
+      if (!hasLineBg(l)) {
+        mergeEmptyWordsInLine(l);
+      }
     }
   });
   
@@ -3135,21 +3141,24 @@ function performHotFix() {
           if (w.startMs > lines[i].endMs) w.startMs = Math.max(lines[i].startMs, lines[i].endMs - minD);
           if (w.endMs > lines[i].endMs) w.endMs = lines[i].endMs;
         });
-        for (let j = 0; j < lines[i].words.length - 1; j++) {
-          if (lines[i].words[j].endMs > lines[i].words[j + 1].startMs) {
-              lines[i].words[j + 1].startMs = lines[i].words[j].endMs;
-              if (lines[i].words[j + 1].endMs < lines[i].words[j + 1].startMs + minD) {
-                  lines[i].words[j + 1].endMs = lines[i].words[j + 1].startMs + minD;
-              }
+        // Intra-line overlap fixing: ONLY for lines WITHOUT background vocals
+        if (!hasLineBg(lines[i])) {
+          for (let j = 0; j < lines[i].words.length - 1; j++) {
+            if (lines[i].words[j].endMs > lines[i].words[j + 1].startMs) {
+                lines[i].words[j + 1].startMs = lines[i].words[j].endMs;
+                if (lines[i].words[j + 1].endMs < lines[i].words[j + 1].startMs + minD) {
+                    lines[i].words[j + 1].endMs = lines[i].words[j + 1].startMs + minD;
+                }
+            }
           }
         }
       }
     }
   }
 
-  // 4. Final Gap Fill (Ensure full word coverage within lines)
+  // 4. Final Gap Fill (Ensure full word coverage within lines - ONLY for lines without background vocals)
   lines.forEach(l => {
-    if (l.words && l.words.length > 0) {
+    if (!hasLineBg(l) && l.words && l.words.length > 0) {
       l.words[0].startMs = l.startMs;
       for (let i = 0; i < l.words.length - 1; i++) {
         l.words[i].endMs = l.words[i + 1].startMs;
