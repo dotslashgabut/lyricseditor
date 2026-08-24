@@ -512,13 +512,22 @@ function fillGapsWithGhostWords(cues) {
     c.words.sort((a, b) => a.startMs - b.startMs);
 
     const hasBg = c.words.some(w => w.isBackground || w.role === 'x-bg');
-    const hasMain = c.words.some(w => !w.isBackground && w.role !== 'x-bg');
+
+    // If the line contains background vocals, do NOT add ghost words for main or bg channels,
+    // and strip any existing blank ghost words so the timeline display is clean.
+    if (hasBg || pIsBg) {
+      c.words = c.words.filter(w => {
+        const t = (w.text || "").trim();
+        return t !== "" && t !== "\\";
+      });
+      return;
+    }
 
     function fillChannelGaps(chWords, isBg) {
       if (chWords.length === 0) return [];
       const filled = [];
 
-      // Lead-in gap from line startMs (only for main channel, never create lead-in ghost blocks across line for background vocals)
+      // Lead-in gap from line startMs
       if (!isBg && chWords[0].startMs > startMs + 20) {
         filled.push({
           id: nextGhostId++,
@@ -549,7 +558,7 @@ function fillGapsWithGhostWords(cues) {
         }
       }
 
-      // Tail gap to line endMs (only for main channel)
+      // Tail gap to line endMs
       const lastW = filled[filled.length - 1];
       if (!isBg && lastW && lastW.endMs < endMs - 20) {
         filled.push({
@@ -566,39 +575,7 @@ function fillGapsWithGhostWords(cues) {
       return filled;
     }
 
-    let finalWords = [];
-    if (hasBg && hasMain) {
-      // Mixed line: only fill gaps for the main vocal channel, and preserve background vocal words as-is
-      const mainChannel = c.words.filter(w => !w.isBackground && w.role !== 'x-bg');
-      const bgChannel = c.words.filter(w => w.isBackground || w.role === 'x-bg');
-      const filledMain = fillChannelGaps(mainChannel, false);
-      finalWords = [...filledMain, ...bgChannel].sort((a, b) => a.startMs - b.startMs);
-    } else if (hasBg || pIsBg) {
-      // Pure background vocal line: do not insert line-spanning lead-in or tail ghost blocks
-      const filledBg = [];
-      for (let k = 0; k < c.words.length; k++) {
-        filledBg.push(c.words[k]);
-        if (k < c.words.length - 1) {
-          const gap = c.words[k+1].startMs - c.words[k].endMs;
-          if (gap > 20) {
-            filledBg.push({
-              id: nextGhostId++,
-              text: "",
-              startMs: c.words[k].endMs,
-              endMs: c.words[k+1].startMs,
-              isBackground: true,
-              role: 'x-bg',
-              agent: c.words[k].agent || pAgent
-            });
-          }
-        }
-      }
-      finalWords = filledBg;
-    } else {
-      finalWords = fillChannelGaps(c.words, false);
-    }
-
-    c.words = finalWords;
+    c.words = fillChannelGaps(c.words, false);
   });
 }
 
