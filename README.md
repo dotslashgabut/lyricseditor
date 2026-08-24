@@ -32,7 +32,7 @@ A professional-grade, browser-based word-level lyrics and subtitle editor. Desig
     - Automatic gap filling and overlapping prevention.
 - **Smart Tools**:
     - **Global Tools**: Shift Time, Find & Replace, Sort by Time, Remove Empty Lines, Fill Gaps with Empty Lines, Fill Gap to End of Audio, Fix Overlaps (Shrink), Fix Jumps (Push Sequential), Merge/Split Selected Lines, Smart Merge (via Ref File), Sync Line to Words, Clear All.
-    - **Word Tools**: Auto-Generate Word Timings, Fill Gaps, Remove Word Overlaps, Remove Empty Words, Compact Whitespace, Clear Word Timings, Merge Words in Lines, Join Words (No Spaces), Distribute Words Evenly.
+    - **Word Tools**: Auto-Generate Word Timings, Fill Gaps, Convert Empty Lines to Ghost Words, Convert Ghost Words to Empty Lines, Remove Word Overlaps, Remove Empty Words, Compact Whitespace, Clear Word Timings, Merge Words in Lines, Join Words (No Spaces), Distribute Words Evenly.
     - **Text Formatting**: Change Case (Title, Sentence, Upper, Lower), Remove Punctuation.
     - **Hot Fix**: One-click cleanup (compact whitespace, remove empty words, fill gaps).
 - **Visual Feedback**:
@@ -176,6 +176,9 @@ These advanced tools are designed to fix one of the most common issues in lyric 
   - Parentheses are extracted cleanly as channel delimiters without generating phantom word-blocks or corrupting word timings.
 - **Active Word Detection & Playback Navigation Fix**:
   - Fixed timestamp scale calculation and active word boundary tracking so `Alt+N` and `Alt+P` jump accurately forward and backward even during active audio playback.
+- **Empty Line & Ghost Word-Block Bi-Directional Conversion Tools**:
+  - **Convert Empty Lines to Ghost Words**: Converts empty lines into trailing ghost word-blocks attached to the preceding lyric line (keeping top empty lines intact).
+  - **Convert Ghost Words to Empty Lines**: Intelligently extracts ghost word-blocks into empty lines above, below, or splitting the line in the middle.
 
 ### v0.1.0
 
