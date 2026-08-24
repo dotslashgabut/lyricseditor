@@ -201,7 +201,7 @@
     try {
       const content = await file.text();
       const ext = file.name.split('.').pop().toLowerCase();
-      const fmt = {lrc:'lrc', ttml:'ttml', xml:'ttml', json:'json', lyricsfile:'lyricsfile'}[ext] || 'lrc';
+      const fmt = {lrc:'lrc', ttml:'ttml', xml:'ttml', json:'json', lyricsfile:'lyricsfile', yaml:'lyricsfile', yml:'lyricsfile'}[ext] || (typeof detectFormat === 'function' ? detectFormat(file.name, content) : 'lrc');
       if (window.parseMetadata) {
         return window.parseMetadata(content, fmt);
       }

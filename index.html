@@ -24,8 +24,8 @@
             <button class="btn tool-btn" id="btn-load-audio"><i class="fas fa-file-audio"></i> <span>Load Audio</span></button>
             <input type="file" id="input-audio" accept="audio/*,video/*,.mp3,.wav,.ogg,.m4a,.mp4,.webm,.aif,.aiff" aria-label="Load Audio File" hidden>
             <button class="btn tool-btn" id="btn-load-lyrics"><i class="fas fa-file-alt"></i> <span>Load Lyrics</span></button>
-            <input type="file" id="input-lyrics" accept=".lrc,.srt,.vtt,.txt,.json,.xml,.ttml,.lyricsfile,.srv1,.srv2,.srv3" aria-label="Load Lyrics File" hidden>
-            <input type="file" id="input-smart-merge" accept=".lrc,.srt,.vtt,.txt,.json,.xml,.ttml,.lyricsfile,.srv1,.srv2,.srv3" aria-label="Load Smart Merge Reference File" hidden>
+            <input type="file" id="input-lyrics" accept=".lrc,.srt,.vtt,.txt,.json,.xml,.ttml,.lyricsfile,.yaml,.yml,.srv1,.srv2,.srv3" aria-label="Load Lyrics File" hidden>
+            <input type="file" id="input-smart-merge" accept=".lrc,.srt,.vtt,.txt,.json,.xml,.ttml,.lyricsfile,.yaml,.yml,.srv1,.srv2,.srv3" aria-label="Load Smart Merge Reference File" hidden>
 
             <!-- Undo / Redo -->
             <button class="icon-btn" id="btn-undo" title="Undo (Ctrl+Z)"><i class="fas fa-undo"></i></button>
@@ -172,9 +172,17 @@
                         <button class="btn tool-btn" id="btn-reset-session-header" style="padding: 4px 10px; font-size: 11px; color: #ff4d4f; border-color: rgba(255, 77, 79, 0.2);" title="Clear session and reload page"><i class="fas fa-broom"></i> <span>Reset Session</span></button>
                         
                         <!-- Navigation Arrows Moved Here -->
-                        <div class="timeline-controls" style="margin-left: 8px; border-left: 1px solid var(--border); padding-left: 12px; display: flex; gap: 8px;">
+                        <div class="timeline-controls" style="margin-left: 8px; border-left: 1px solid var(--border); padding-left: 12px; display: flex; gap: 8px; align-items: center;">
                             <button class="icon-btn" id="btn-prev-line" title="Previous Line"><i class="fas fa-chevron-up"></i></button>
                             <button class="icon-btn" id="btn-next-line" title="Next Line"><i class="fas fa-chevron-down"></i></button>
+                            
+                            <!-- Low-Confidence Words Jump Controls -->
+                            <div id="confidence-flag-controls" class="confidence-flag-controls" style="display:none; align-items:center; gap:4px; margin-left:6px; background:rgba(245, 158, 11, 0.12); border:1px solid rgba(245, 158, 11, 0.35); border-radius:6px; padding:2px 6px; font-size:11px; color:#f59e0b;" title="Low-Confidence Words (Alt+P / Alt+N to jump)">
+                                <i class="fas fa-triangle-exclamation" style="font-size:10px;"></i>
+                                <span id="confidence-flag-text" style="font-weight:600; font-size:10px;">0 Flagged</span>
+                                <button class="icon-btn" id="btn-prev-flagged" title="Previous Flagged Word (Alt+P)" style="padding:1px 4px; font-size:9px; color:#f59e0b; width:18px; height:18px;"><i class="fas fa-chevron-left"></i></button>
+                                <button class="icon-btn" id="btn-next-flagged" title="Next Flagged Word (Alt+N)" style="padding:1px 4px; font-size:9px; color:#f59e0b; width:18px; height:18px;"><i class="fas fa-chevron-right"></i></button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -537,6 +545,14 @@
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                     <span style="color:var(--text-muted);">Jump to Word #</span>
                     <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">W</kbd>
+                </div>
+                <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
+                    <span style="color:var(--text-muted);">Next Flagged Word</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">Alt+N</kbd>
+                </div>
+                <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
+                    <span style="color:var(--text-muted);">Prev Flagged Word</span>
+                    <kbd style="background:var(--bg-dark); padding:2px 6px; border-radius:3px; border:1px solid var(--border);">Alt+P</kbd>
                 </div>
                 <div class="shortcut-item" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border);">
                     <span style="color:var(--text-muted);">Toggle Fullscreen</span>
