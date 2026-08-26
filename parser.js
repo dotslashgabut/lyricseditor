@@ -110,14 +110,60 @@ function msToSrt(ms) {
 
 function msToVtt(ms) { return msToSrt(ms).replace(',','.'); }
 
+function detectSongPartHeader(line) {
+  if (!line) return null;
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+
+  // Bracketed match: [Verse], [Bridge], [Chorus 1], [Verse: John], etc.
+  const bracketMatch = trimmed.match(/^\[([a-zA-Z0-9\s\-_:,'\.\(\)]+)\]$/);
+  if (bracketMatch) {
+    const inner = bracketMatch[1].trim();
+    // Exclude timestamp tags like [01:23.45] or metadata tags like [ti:Title]
+    if (/^\d{1,3}:\d{2}/.test(inner)) return null;
+    if (/^(ti|ar|al|by|au|la|offset|re|length):/i.test(inner)) return null;
+    return inner;
+  }
+
+  // Colon match: Verse 1:, Chorus:, Bridge:, Intro:, Outro:, Pre-Chorus:, etc.
+  const colonMatch = trimmed.match(/^(Verse(?:\s+\d+)?|Chorus(?:\s+\d+)?|Bridge(?:\s+\d+)?|Intro|Outro|Pre-Chorus|Post-Chorus|Hook|Solo|Interlude|Instrumental|Refrain|Break)\s*:$/i);
+  if (colonMatch) {
+    return colonMatch[1].trim();
+  }
+
+  return null;
+}
+
 function parseLRC(content) {
   const lines = content.split(/\r?\n/), cues = [];
   const re = /^(\s*\[\d{1,3}:\d{2}(?:\.\d{2,3})?\]\s*)+(.*)/;
   let id = 1, wid = 1;
+  let currentSongPart = null;
+
   lines.forEach((line, li) => {
     const m = line.match(re);
-    if (!m) return;
-    const ts = m[1], raw = m[2];
+    if (!m) {
+      const detectedPart = detectSongPartHeader(line);
+      if (detectedPart) {
+        currentSongPart = detectedPart;
+      }
+      return;
+    }
+    const ts = m[1];
+    let raw = m[2];
+
+    // Check if raw line starts with [Verse] or [Chorus]
+    let linePart = currentSongPart;
+    const partMatch = raw.match(/^\s*\[([a-zA-Z0-9\s\-_:,'\.\(\)]+)\]\s*(.*)$/);
+    if (partMatch) {
+      const tagInside = partMatch[1].trim();
+      if (!/^\d{1,3}:\d{2}/.test(tagInside) && !/^(ti|ar|al|by|au|la|offset|re|length):/i.test(tagInside)) {
+        currentSongPart = tagInside;
+        linePart = currentSongPart;
+        raw = partMatch[2];
+      }
+    }
+
     const tms = []; let tm;
     const tre = /\[(\d{1,3}:\d{2}(?:\.\d{2,3})?)\]/g;
     while ((tm = tre.exec(ts))) tms.push(timeToMs(tm[1]));
@@ -198,7 +244,8 @@ function parseLRC(content) {
         endMs: start + 3000, 
         text: cleanText, 
         words: words.length ? words.map(w => ({...w, ...(isBgLine ? { isBackground: true, role: 'x-bg' } : {}) })) : null,
-        ...(isBgLine ? { isBackground: true, role: 'x-bg' } : {})
+        ...(isBgLine ? { isBackground: true, role: 'x-bg' } : {}),
+        ...(linePart ? { songPart: linePart } : {})
       });
     });
   });
@@ -316,15 +363,35 @@ function parseVTT(content) {
 function parseTXT(content) {
   // Normalize line endings and split
   const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
-  
-  // Remove the very last empty line if the file ended with a newline
-  if (lines.length > 0 && lines[lines.length - 1] === '') {
-    lines.pop();
+  const cues = [];
+  let currentSongPart = null;
+  let lineIdx = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+
+    const detectedPart = detectSongPartHeader(trimmed);
+    if (detectedPart) {
+      currentSongPart = detectedPart;
+      continue;
+    }
+
+    const isBgLine = trimmed.startsWith('(') && trimmed.endsWith(')');
+    lineIdx++;
+    cues.push({
+      id: lineIdx,
+      startMs: (lineIdx - 1) * 2000,
+      endMs: lineIdx * 2000,
+      text: trimmed,
+      words: null,
+      ...(currentSongPart ? { songPart: currentSongPart } : {}),
+      ...(isBgLine ? { isBackground: true, role: 'x-bg' } : {})
+    });
   }
 
-  return lines.map((l, i) => ({
-    id: i+1, startMs: i*2000, endMs: (i+1)*2000, text: l.trim(), words: null
-  }));
+  return cues;
 }
 
 function parseJSON_(content) {
@@ -1020,7 +1087,8 @@ function parseLyricsFile(content) {
       endMs,
       words,
       ...(l.isBackground ? { isBackground: true, role: 'x-bg' } : {}),
-      ...(l.agent ? { agent: l.agent } : {})
+      ...(l.agent ? { agent: l.agent } : {}),
+      ...(l.songPart ? { songPart: l.songPart } : {})
     };
   }
 
@@ -1052,7 +1120,8 @@ function parseLyricsFile(content) {
         endMs: null,
         words: [],
         isBackground: false,
-        agent: null
+        agent: null,
+        songPart: null
       };
       currentWord = null;
       inWords = false;
@@ -1132,6 +1201,12 @@ function parseLyricsFile(content) {
         currentLine.isBackground = /true/i.test(raw);
       } else if (/^\s*agent:\s*(.*)/i.test(raw)) {
         currentLine.agent = unquoteYaml(raw.match(/agent:\s*(.*)/i)[1]);
+      } else if (/^\s*songPart:\s*(.*)/i.test(raw)) {
+        currentLine.songPart = unquoteYaml(raw.match(/songPart:\s*(.*)/i)[1]);
+      } else if (/^\s*song_part:\s*(.*)/i.test(raw)) {
+        currentLine.songPart = unquoteYaml(raw.match(/song_part:\s*(.*)/i)[1]);
+      } else if (/^\s*part:\s*(.*)/i.test(raw)) {
+        currentLine.songPart = unquoteYaml(raw.match(/part:\s*(.*)/i)[1]);
       }
     }
   }
@@ -1196,16 +1271,54 @@ function stringifyTTML(cues, karaoke, durationMs, options = {}) {
     if (karaoke && cue.words && cue.words.length > 0) {
       const validWords = cue.words.filter(w => (w.text || "").trim().length > 0 && w.text !== "\\");
       const wordsToExport = validWords.length > 0 ? validWords : cue.words;
-      const spans = wordsToExport.map((w, idx, arr) => {
-        let wStart = w.startMs !== undefined ? w.startMs : cue.startMs;
-        let wEnd = w.endMs !== undefined ? w.endMs : (wStart + 300);
-        if (idx < arr.length - 1 && arr[idx+1].startMs) wEnd = Math.min(wEnd, arr[idx+1].startMs);
+
+      const isCueBg = !!(cue.isBackground || cue.role === 'x-bg');
+      const mainWords = isCueBg ? [] : wordsToExport.filter(w => !w.isBackground && w.role !== 'x-bg');
+      const bgWords = isCueBg ? wordsToExport : wordsToExport.filter(w => w.isBackground || w.role === 'x-bg');
+
+      function renderWordSpan(w, indent = '        ') {
+        const ws = w.startMs !== undefined ? w.startMs : cue.startMs;
+        const we = w.endMs !== undefined ? w.endMs : cue.endMs;
         let extra = '';
-        if (w.isBackground || w.role === 'x-bg') extra += ` ttm:role="x-bg"`;
         if (w.agent && w.agent !== cue.agent) extra += ` ttm:agent="${w.agent}"`;
-        return `        <span begin="${msToVtt(wStart)}" end="${msToVtt(wEnd)}"${extra}>${escapeXML(w.text)}</span>`;
-      });
-      content = '\n' + spans.join('\n') + '\n      ';
+        return `${indent}<span begin="${msToTTMLTime(ws)}" end="${msToTTMLTime(we)}"${extra}>${escapeXML(w.text)}</span>`;
+      }
+
+      function renderBgGroup(words) {
+        if (!words || words.length === 0) return '';
+        const inner = words.map(w => renderWordSpan(w, '          ')).join('\n');
+        return `        <span ttm:role="x-bg">\n${inner}\n        </span>`;
+      }
+
+      let innerSpans = [];
+
+      if (mainWords.length === 0) {
+        innerSpans.push(renderBgGroup(bgWords));
+      } else if (bgWords.length === 0) {
+        mainWords.forEach(w => innerSpans.push(renderWordSpan(w)));
+      } else {
+        let startBg = [];
+        let endBg = [];
+        const firstMain = mainWords[0];
+        const lastMain = mainWords[mainWords.length - 1];
+
+        bgWords.forEach(w => {
+          if (w.tokenIdx !== undefined && firstMain.tokenIdx !== undefined && lastMain.tokenIdx !== undefined) {
+            if (w.tokenIdx < firstMain.tokenIdx) startBg.push(w);
+            else endBg.push(w);
+          } else {
+            const mid = (w.startMs + w.endMs) / 2;
+            const mainMid = (firstMain.startMs + lastMain.endMs) / 2;
+            if (mid <= mainMid) startBg.push(w);
+            else endBg.push(w);
+          }
+        });
+
+        if (startBg.length > 0) innerSpans.push(renderBgGroup(startBg));
+        mainWords.forEach(w => innerSpans.push(renderWordSpan(w)));
+        if (endBg.length > 0) innerSpans.push(renderBgGroup(endBg));
+      }
+      content = '\n' + innerSpans.join('\n') + '\n      ';
     } else {
       content = escapeXML(content);
     }
@@ -1288,37 +1401,53 @@ function stringifyAppleTTML(cues, karaoke, durationMs, options = {}) {
       if (karaoke && cue.words && cue.words.length > 0) {
         const validWords = cue.words.filter(w => (w.text || "").trim().length > 0 && w.text !== "\\");
         const wordsToExport = validWords.length > 0 ? validWords : cue.words;
-        const groups = [];
-        let cur = null;
-        wordsToExport.forEach(w => {
-          const isBg = !!(w.isBackground || w.role === 'x-bg');
-          if (!cur || cur.isBg !== isBg) {
-            cur = { isBg, words: [] };
-            groups.push(cur);
-          }
-          cur.words.push(w);
-        });
+
+        const isCueBg = !!(cue.isBackground || cue.role === 'x-bg');
+        const mainWords = isCueBg ? [] : wordsToExport.filter(w => !w.isBackground && w.role !== 'x-bg');
+        const bgWords = isCueBg ? wordsToExport : wordsToExport.filter(w => w.isBackground || w.role === 'x-bg');
+
+        function renderWordSpan(w, indent = '        ') {
+          const ws = w.startMs !== undefined ? w.startMs : cue.startMs;
+          const we = w.endMs !== undefined ? w.endMs : cue.endMs;
+          let extra = '';
+          if (w.agent && w.agent !== cue.agent) extra += ` ttm:agent="${w.agent}"`;
+          return `${indent}<span begin="${msToTTMLTime(ws)}" end="${msToTTMLTime(we)}"${extra}>${escapeXML(w.text)}</span>`;
+        }
+
+        function renderBgGroup(words) {
+          if (!words || words.length === 0) return '';
+          const inner = words.map(w => renderWordSpan(w, '          ')).join('\n');
+          return `        <span ttm:role="x-bg">\n${inner}\n        </span>`;
+        }
+
         let innerSpans = [];
-        groups.forEach(g => {
-          if (g.isBg) {
-            const inner = g.words.map(w => {
-              const ws = w.startMs !== undefined ? w.startMs : cue.startMs;
-              const we = w.endMs !== undefined ? w.endMs : cue.endMs;
-              let extra = '';
-              if (w.agent && w.agent !== cue.agent) extra += ` ttm:agent="${w.agent}"`;
-              return `          <span begin="${msToTTMLTime(ws)}" end="${msToTTMLTime(we)}"${extra}>${escapeXML(w.text)}</span>`;
-            }).join('\n');
-            innerSpans.push(`        <span ttm:role="x-bg">\n${inner}\n        </span>`);
-          } else {
-            g.words.forEach(w => {
-              const ws = w.startMs !== undefined ? w.startMs : cue.startMs;
-              const we = w.endMs !== undefined ? w.endMs : cue.endMs;
-              let extra = '';
-              if (w.agent && w.agent !== cue.agent) extra += ` ttm:agent="${w.agent}"`;
-              innerSpans.push(`        <span begin="${msToTTMLTime(ws)}" end="${msToTTMLTime(we)}"${extra}>${escapeXML(w.text)}</span>`);
-            });
-          }
-        });
+
+        if (mainWords.length === 0) {
+          innerSpans.push(renderBgGroup(bgWords));
+        } else if (bgWords.length === 0) {
+          mainWords.forEach(w => innerSpans.push(renderWordSpan(w)));
+        } else {
+          let startBg = [];
+          let endBg = [];
+          const firstMain = mainWords[0];
+          const lastMain = mainWords[mainWords.length - 1];
+
+          bgWords.forEach(w => {
+            if (w.tokenIdx !== undefined && firstMain.tokenIdx !== undefined && lastMain.tokenIdx !== undefined) {
+              if (w.tokenIdx < firstMain.tokenIdx) startBg.push(w);
+              else endBg.push(w);
+            } else {
+              const mid = (w.startMs + w.endMs) / 2;
+              const mainMid = (firstMain.startMs + lastMain.endMs) / 2;
+              if (mid <= mainMid) startBg.push(w);
+              else endBg.push(w);
+            }
+          });
+
+          if (startBg.length > 0) innerSpans.push(renderBgGroup(startBg));
+          mainWords.forEach(w => innerSpans.push(renderWordSpan(w)));
+          if (endBg.length > 0) innerSpans.push(renderBgGroup(endBg));
+        }
         content = '\n' + innerSpans.join('\n') + '\n      ';
       } else {
         content = escapeXML(cue.text || '');
@@ -1422,25 +1551,48 @@ function stringifyJSON3(cues) {
   return JSON.stringify({ events }, null, 2);
 }
 
-function stringifyTXT(cues) {
+function stringifyTXT(cues, options = {}) {
   let result = '';
   const STANZA_BREAK_THRESHOLD = 2000;
+  const includeSongParts = options.includeSongParts !== false;
+  let lastSongPart = null;
 
   for (let i = 0; i < cues.length; i++) {
-    const text = (cues[i].text || "").trim();
-    result += text + '\n';
+    const cue = cues[i];
+    const text = (cue.text || "").trim();
+    const currentPart = (cue.songPart || "").trim();
+
+    if (includeSongParts) {
+      if (currentPart && currentPart !== lastSongPart) {
+        if (result.length > 0) {
+          result = result.trimEnd() + '\n\n';
+        }
+        result += `[${currentPart}]\n`;
+        lastSongPart = currentPart;
+      } else if (!currentPart && lastSongPart !== null) {
+        lastSongPart = null;
+      }
+    }
+
+    if (text) {
+      result += text + '\n';
+    }
     
     if (i < cues.length - 1) {
-      const currentEnd = cues[i].endMs;
-      const nextStart = cues[i + 1].startMs;
-      const gap = nextStart - currentEnd;
+      const nextCue = cues[i + 1];
+      const nextPart = (nextCue.songPart || "").trim();
+      if (!includeSongParts || !nextPart || nextPart === currentPart) {
+        const currentEnd = cue.endMs;
+        const nextStart = nextCue.startMs;
+        const gap = nextStart - currentEnd;
 
-    if (gap >= STANZA_BREAK_THRESHOLD) {
-        result += '\n';
+        if (gap >= STANZA_BREAK_THRESHOLD) {
+          result += '\n';
+        }
       }
     }
   }
-  return result.trim();
+  return result.trim() + '\n';
 }
 
 function stringifyLRC(cues, enhanced, durationMs, options = {}) {
@@ -1565,7 +1717,7 @@ function exportAs(cues, format, durationMs, options = {}) {
           text: w.text,
           startMs: w.startMs,
           endMs: w.endMs,
-          ...(w.confidence !== undefined ? { confidence: w.confidence } : {}),
+          ...(w.confidence !== undefined ? { confidence: w.confidence } : (w.score !== undefined ? { confidence: w.score } : {})),
           isBackground: !!(w.isBackground || w.role === 'x-bg'),
           role: w.role || null,
           agent: w.agent || null
@@ -1578,7 +1730,11 @@ function exportAs(cues, format, durationMs, options = {}) {
     }, null, 2);
     case 'json3': return stringifyJSON3(exportCues);
     case 'lyricsfile': return stringifyLyricsFile(exportCues, durationMs, {metadata});
-    case 'txt': return stringifyTXT(exportCues);
+    case 'lyricsfile_yaml': return stringifyLyricsFile(exportCues, durationMs, {metadata});
+    case 'yaml': return stringifyLyricsFile(exportCues, durationMs, {metadata});
+    case 'txt_parts': return stringifyTXT(exportCues, { ...options, metadata, includeSongParts: true });
+    case 'txt_plain': return stringifyTXT(exportCues, { ...options, metadata, includeSongParts: false });
+    case 'txt': return stringifyTXT(exportCues, { ...options, metadata, includeSongParts: options.includeSongParts !== undefined ? options.includeSongParts : false });
     case 'audacity': return stringifyAudacity(exportCues, false);
     default: return '';
   }
@@ -1609,10 +1765,11 @@ function stringifyLyricsFile(cues, durationMs, options = {}) {
           if (w.endMs !== undefined && w.endMs !== null && w.endMs > w.startMs) {
             yaml += `        end_ms: ${Math.round(w.endMs)}\n`;
           }
-          if (w.confidence !== undefined && w.confidence !== null) {
-            yaml += `        confidence: ${w.confidence}\n`;
+          const conf = (w.confidence !== undefined && w.confidence !== null) ? w.confidence : w.score;
+          if (conf !== undefined && conf !== null && !isNaN(conf)) {
+            yaml += `        confidence: ${conf}\n`;
           }
-          if (w.isBackground) yaml += `        isBackground: true\n`;
+          if (w.isBackground || w.role === 'x-bg') yaml += `        isBackground: true\n`;
           if (w.agent) yaml += `        agent: "${w.agent}"\n`;
         });
       } else {
@@ -1623,8 +1780,9 @@ function stringifyLyricsFile(cues, durationMs, options = {}) {
     }
     yaml += `    start_ms: ${Math.round(c.startMs)}\n`;
     yaml += `    end_ms: ${Math.round(c.endMs)}\n`;
-    if (c.isBackground) yaml += `    isBackground: true\n`;
+    if (c.isBackground || c.role === 'x-bg') yaml += `    isBackground: true\n`;
     if (c.agent) yaml += `    agent: "${c.agent}"\n`;
+    if (c.songPart) yaml += `    songPart: "${c.songPart.replace(/"/g, '\\"')}"\n`;
   });
   yaml += `plain: |-\n`;
   cues.forEach(c => {

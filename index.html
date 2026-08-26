@@ -148,17 +148,20 @@
                     <div class="dropdown-item" data-format="vtt_karaoke"><i class="fas fa-microphone-alt"></i> VTT (Words)</div>
                     <div class="dropdown-item" data-format="ttml_karaoke"><i class="fas fa-microphone-alt"></i> TTML (Words)</div>
                     <div class="dropdown-item" data-format="apple_ttml_karaoke"><i class="fab fa-apple"></i> Apple TTML (Words)</div>
+                    <div class="dropdown-item" data-format="lyricsfile_yaml"><i class="fas fa-file-code"></i> LyricsFile YAML</div>
                     <div class="dropdown-item" data-format="srv3_karaoke"><i class="fas fa-microphone-alt"></i> YouTube SRV (Words)</div>
                     <div class="dropdown-item" data-format="audacity_karaoke"><i class="fas fa-microphone-alt"></i> Audacity Labels (Words)</div>
                     <div class="dropdown-divider"></div>
                     <div class="dropdown-section-title">Other Formats</div>
+                    <div class="dropdown-item" data-format="json"><i class="fas fa-code"></i> JSON</div>
                     <div class="dropdown-item" data-format="srv1"><i class="fas fa-file-code"></i> YouTube SRV1</div>
                     <div class="dropdown-item" data-format="srv2"><i class="fas fa-file-code"></i> YouTube SRV2</div>
                     <div class="dropdown-item" data-format="srv3"><i class="fas fa-file-code"></i> YouTube SRV3</div>
-                    <div class="dropdown-item" data-format="json"><i class="fas fa-code"></i> JSON</div>
                     <div class="dropdown-item" data-format="json3"><i class="fas fa-code"></i> YouTube JSON3</div>
                     <div class="dropdown-item" data-format="audacity"><i class="fas fa-file-waveform"></i> Audacity Labels</div>
                     <div class="dropdown-item" data-format="lyricsfile"><i class="fas fa-file-code"></i> LRCLIB (.lyricsfile)</div>
+                    <div class="dropdown-item" data-format="yaml"><i class="fas fa-file-code"></i> YAML (.yaml)</div>
+                    <div class="dropdown-item" data-format="txt_parts"><i class="fas fa-font"></i> Plain Text (with Song Parts)</div>
                     <div class="dropdown-item" data-format="txt"><i class="fas fa-font"></i> Plain Text</div>
                 </div>
             </div>
@@ -397,36 +400,80 @@
     </div>
     <!-- Edit Text Modal -->
     <div class="modal-overlay" id="edit-text-modal" style="display:none">
-        <div class="modal-box" style="min-width: 450px;">
-            <div style="margin:16px 0;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                    <label for="edit-text-input" style="font-size:13px; color:var(--text-muted); margin-right: 20px; font-weight: 500;">Text:</label>
-                    <div style="display:flex; gap:6px;">
-                        <button class="btn" id="btn-edit-undo" style="padding:4px 8px; font-size:11px;" title="Undo (Ctrl+Z)"><i class="fas fa-undo"></i></button>
-                        <button class="btn" id="btn-edit-redo" style="padding:4px 8px; font-size:11px;" title="Redo (Ctrl+Shift+Z / Ctrl+Y)"><i class="fas fa-redo"></i></button>
-                        <div style="width: 12px;"></div>
-                        <button class="btn" id="btn-remove-blank" style="padding:4px 10px; font-size:11px; color:#ff4d4f; border-color:rgba(255,77,79,0.2);" title="Remove all blank word placeholders"><i class="fas fa-eraser"></i> Remove Blanks</button>
-                        <button class="btn" id="btn-join-words" style="padding:4px 10px; font-size:11px;" title="Join all words by removing spaces"><i class="fas fa-compress-arrows-alt"></i> Join Words</button>
-                        <button class="btn" id="btn-insert-blank" style="padding:4px 10px; font-size:11px;" title="Insert a placeholder for a timestamp without text"><i class="fas fa-ghost"></i> Insert Blank</button>
+        <div class="modal-box edit-modal-box" style="min-width: 560px; max-width: 680px; width: 92vw;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <h3 style="margin:0; display:flex; align-items:center; gap:6px;"><i class="fas fa-edit" style="color:var(--accent);"></i> Edit Line Text & Vocals</h3>
+                <div style="display:flex; gap:4px; align-items:center;">
+                    <button class="btn" id="btn-edit-undo" style="padding:4px 8px; font-size:11px;" title="Undo (Ctrl+Z)"><i class="fas fa-undo"></i></button>
+                    <button class="btn" id="btn-edit-redo" style="padding:4px 8px; font-size:11px;" title="Redo (Ctrl+Shift+Z / Ctrl+Y)"><i class="fas fa-redo"></i></button>
+                    <div style="width: 8px;"></div>
+                    <button class="btn" id="btn-remove-blank" style="padding:4px 10px; font-size:11px; color:#ff4d4f; border-color:rgba(255,77,79,0.2);" title="Remove all blank word placeholders"><i class="fas fa-eraser"></i> Remove Blanks</button>
+                    <button class="btn" id="btn-join-words" style="padding:4px 10px; font-size:11px;" title="Join words (remove spaces)"><i class="fas fa-compress-arrows-alt"></i> Join Words</button>
+                    <button class="btn" id="btn-insert-blank" style="padding:4px 10px; font-size:11px;" title="Insert a placeholder for a timestamp without text"><i class="fas fa-ghost"></i> Insert Blank</button>
+                </div>
+            </div>
+
+            <div style="margin:12px 0;">
+                <!-- Add BG Vocal Button (Start) -->
+                <button class="btn btn-add-bg-channel" id="btn-add-bg-start" style="width:100%; margin-bottom:8px; padding:6px 12px; font-size:11.5px; border:1px dashed rgba(138, 96, 255, 0.45); color:#a78bfa; background:rgba(138, 96, 255, 0.07); display:flex; align-items:center; justify-content:center; gap:6px; cursor:pointer;" title="Add background vocal placed before main lyrics"><i class="fas fa-plus"></i> Add Background Vocal (at Start / Intro)</button>
+
+                <!-- Background Vocal Section (Start) -->
+                <div id="edit-bg-start-section" style="display:none; margin-bottom:10px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                        <label for="edit-bg-start-input" style="font-size:11.5px; color:#a78bfa; font-weight:600; display:flex; align-items:center; gap:6px;">
+                            <i class="fas fa-microphone-lines"></i> Background Vocal (Start / Intro)
+                        </label>
+                        <button class="btn" id="btn-remove-bg-start" style="padding:2px 8px; font-size:10px; color:#ff4d4f; border-color:rgba(255,77,79,0.2);" title="Remove Start Background Vocal"><i class="fas fa-times"></i> Remove</button>
+                    </div>
+                    <div class="edit-input-wrapper edit-bg-wrapper" style="height: 65px; border-color: rgba(138, 96, 255, 0.35);">
+                        <div id="edit-bg-start-backdrop" class="edit-input-backdrop"></div>
+                        <textarea id="edit-bg-start-input" spellcheck="false" placeholder="Background vocal text before main lyrics..."></textarea>
                     </div>
                 </div>
-                <div class="edit-input-wrapper">
-                    <div id="edit-text-backdrop" class="edit-input-backdrop"></div>
-                    <textarea id="edit-text-input" spellcheck="false" placeholder="Type lyrics here..."></textarea>
-                    <div id="edit-drop-cursor" class="edit-drop-cursor"></div>
+
+                <!-- Main Lyrics Section -->
+                <div id="edit-main-section" style="margin-bottom:6px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                        <label for="edit-text-input" style="font-size:11.5px; color:var(--text-main); font-weight:600; display:flex; align-items:center; gap:6px;">
+                            <i class="fas fa-align-left" style="color:var(--accent);"></i> Main Lyrics (Lead Vocal)
+                        </label>
+                    </div>
+                    <div class="edit-input-wrapper" style="height: 85px;">
+                        <div id="edit-text-backdrop" class="edit-input-backdrop"></div>
+                        <textarea id="edit-text-input" spellcheck="false" placeholder="Type main lyrics here..."></textarea>
+                        <div id="edit-drop-cursor" class="edit-drop-cursor"></div>
+                    </div>
                 </div>
-                <div style="font-size:11px; color:var(--text-muted); margin-top:8px; display:flex; justify-content:space-between; align-items:center;">
+
+                <!-- Add BG Vocal Button (End) -->
+                <button class="btn btn-add-bg-channel" id="btn-add-bg-end" style="width:100%; margin-top:8px; margin-bottom:8px; padding:6px 12px; font-size:11.5px; border:1px dashed rgba(138, 96, 255, 0.45); color:#a78bfa; background:rgba(138, 96, 255, 0.07); display:flex; align-items:center; justify-content:center; gap:6px; cursor:pointer;" title="Add background vocal placed after main lyrics"><i class="fas fa-plus"></i> Add Background Vocal (at End / Ad-lib)</button>
+
+                <!-- Background Vocal Section (End) -->
+                <div id="edit-bg-end-section" style="display:none; margin-top:6px; margin-bottom:8px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                        <label for="edit-bg-end-input" style="font-size:11.5px; color:#a78bfa; font-weight:600; display:flex; align-items:center; gap:6px;">
+                            <i class="fas fa-microphone-lines"></i> Background Vocal (End / Ad-lib)
+                        </label>
+                        <button class="btn" id="btn-remove-bg-end" style="padding:2px 8px; font-size:10px; color:#ff4d4f; border-color:rgba(255,77,79,0.2);" title="Remove End Background Vocal"><i class="fas fa-times"></i> Remove</button>
+                    </div>
+                    <div class="edit-input-wrapper edit-bg-wrapper" style="height: 65px; border-color: rgba(138, 96, 255, 0.35);">
+                        <div id="edit-bg-end-backdrop" class="edit-input-backdrop"></div>
+                        <textarea id="edit-bg-end-input" spellcheck="false" placeholder="Background vocal text after main lyrics..."></textarea>
+                    </div>
+                </div>
+
+                <div style="font-size:11px; color:var(--text-muted); margin-top:10px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
                     <div>
-                        <i class="fas fa-info-circle"></i> Use <b>\</b> for blank words. Use <b>( )</b> for background vocals.
+                        <i class="fas fa-info-circle"></i> Use <b>\</b> for blank words. Main and Background vocal texts are separated to prevent timestamp collisions.
                     </div>
                     <label for="edit-keep-structure" style="display:flex; align-items:center; gap:6px; cursor:pointer; color:var(--text-main);" title="If checked, new words will be mapped directly to existing timestamp slots in order, ignoring text similarity.">
                         <input type="checkbox" id="edit-keep-structure" style="width:14px; height:14px; accent-color:var(--accent);"> Keep Word Timings
                     </label>
                 </div>
             </div>
-            <div style="display:flex; gap:8px; justify-content:flex-end;">
+            <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:14px; border-top:1px solid var(--border); padding-top:12px;">
                 <button class="btn" id="et-cancel">Cancel</button>
-                <button class="btn btn-primary" id="et-apply">Apply Changes</button>
+                <button class="btn btn-primary" id="et-apply"><i class="fas fa-check"></i> Apply Changes</button>
             </div>
         </div>
     </div>
@@ -811,16 +858,6 @@
     <script src="parser.js"></script>
     <script src="metadata-editor.js"></script>
     <script src="script.js"></script>
-
-    <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-VTS4PY9E9X"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-
-      gtag('config', 'G-VTS4PY9E9X');
-    </script>
 
 </body>
 

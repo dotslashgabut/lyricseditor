@@ -221,12 +221,43 @@ function loadSession() {
 // Modal History (Local to Edit Modal)
 let modalHistory = [];
 let modalHistIdx = -1;
+let lastActiveEditInput = null;
+
+function getModalState() {
+  return {
+    startBg: $('edit-bg-start-input') ? $('edit-bg-start-input').value : '',
+    main: $('edit-text-input') ? $('edit-text-input').value : '',
+    endBg: $('edit-bg-end-input') ? $('edit-bg-end-input').value : '',
+    showStart: $('edit-bg-start-section') ? $('edit-bg-start-section').style.display !== 'none' : false,
+    showEnd: $('edit-bg-end-section') ? $('edit-bg-end-section').style.display !== 'none' : false
+  };
+}
+
+function setModalState(state) {
+  if (!state) return;
+  if ($('edit-bg-start-input')) $('edit-bg-start-input').value = state.startBg || '';
+  if ($('edit-text-input')) $('edit-text-input').value = state.main || '';
+  if ($('edit-bg-end-input')) $('edit-bg-end-input').value = state.endBg || '';
+
+  if ($('edit-bg-start-section')) $('edit-bg-start-section').style.display = state.showStart ? 'block' : 'none';
+  if ($('btn-add-bg-start')) $('btn-add-bg-start').style.display = state.showStart ? 'none' : 'flex';
+
+  if ($('edit-bg-end-section')) $('edit-bg-end-section').style.display = state.showEnd ? 'block' : 'none';
+  if ($('btn-add-bg-end')) $('btn-add-bg-end').style.display = state.showEnd ? 'none' : 'flex';
+
+  updateEditHighlighters();
+}
 
 function pushModalHistory() {
-  const val = $('edit-text-input').value;
-  if (modalHistIdx >= 0 && modalHistory[modalHistIdx] === val) return;
+  const current = getModalState();
+  if (modalHistIdx >= 0) {
+    const prev = modalHistory[modalHistIdx];
+    if (prev && prev.startBg === current.startBg && prev.main === current.main && prev.endBg === current.endBg && prev.showStart === current.showStart && prev.showEnd === current.showEnd) {
+      return;
+    }
+  }
   modalHistory = modalHistory.slice(0, modalHistIdx + 1);
-  modalHistory.push(val);
+  modalHistory.push(current);
   if (modalHistory.length > 100) modalHistory.shift();
   modalHistIdx = modalHistory.length - 1;
 }
@@ -234,16 +265,14 @@ function pushModalHistory() {
 function modalUndo() {
   if (modalHistIdx > 0) {
     modalHistIdx--;
-    $('edit-text-input').value = modalHistory[modalHistIdx];
-    updateEditHighlighter();
+    setModalState(modalHistory[modalHistIdx]);
   }
 }
 
 function modalRedo() {
   if (modalHistIdx < modalHistory.length - 1) {
     modalHistIdx++;
-    $('edit-text-input').value = modalHistory[modalHistIdx];
-    updateEditHighlighter();
+    setModalState(modalHistory[modalHistIdx]);
   }
 }
 
@@ -416,22 +445,7 @@ function renderTimeline() {
     tr.querySelector('.track-delete-btn').onclick = () => { lines=lines.filter(l=>l.id!==line.id); pushHistory(); renderTimeline(); };
     tr.querySelector('.track-tag-btn').onclick = () => { openLineAttrModal(line); };
     tr.querySelector('.track-edit-btn').onclick = () => {
-      editingLine = line;
-      // Show \ for blank words so users can preserve them, and format background vocals
-      $('edit-text-input').value = formatWordsForEdit(line);
-      $('edit-keep-structure').checked = false; // Default OFF
-      updateEditHighlighter();
-      
-      // Initialize Local Modal History
-      modalHistory = [];
-      modalHistIdx = -1;
-      pushModalHistory();
-
-      $('edit-text-modal').style.display = 'flex';
-      $('edit-text-input').focus();
-      
-      // Start active sync for scroll (fixes drag-drop scroll lag)
-      startEditSync();
+      openEditTextModal(line);
     };
     
     container.appendChild(createAddLineBtn(idx+1));
@@ -1568,7 +1582,7 @@ function performExport(f, isQuick = false) {
   // Only use autoEmpty if it's a manual export and the toggle is checked.
   // For Quick Export, we want it to match exactly what's in the editor.
   const autoEmpty = isQuick ? false : ($('toggle-auto-empty-lines') ? $('toggle-auto-empty-lines').checked : false);
-  const ext={lrc:'lrc',lrc_enhanced:'lrc',srt:'srt',vtt:'vtt',vtt_karaoke:'vtt',ttml:'ttml',ttml_karaoke:'ttml',apple_ttml:'ttml',apple_ttml_karaoke:'ttml',srv1:'srv1',srv2:'srv2',srv3:'srv3',srv3_karaoke:'srv3',json:'json',json3:'json',lyricsfile:'lyricsfile',txt:'txt',audacity:'txt',audacity_karaoke:'txt'}[targetFormat]||'txt';
+  const ext={lrc:'lrc',lrc_enhanced:'lrc',srt:'srt',vtt:'vtt',vtt_karaoke:'vtt',ttml:'ttml',ttml_karaoke:'ttml',apple_ttml:'ttml',apple_ttml_karaoke:'ttml',srv1:'srv1',srv2:'srv2',srv3:'srv3',srv3_karaoke:'srv3',json:'json',json3:'json',lyricsfile:'lyricsfile',lyricsfile_yaml:'lyricsfile.yaml',yaml:'yaml',txt:'txt',txt_parts:'txt',txt_plain:'txt',audacity:'txt',audacity_karaoke:'txt'}[targetFormat]||'txt';
   
   let finalBaseName = originalFilename;
   if (audioFilename && lyricsFilename && audioFilename !== lyricsFilename) {
@@ -2321,7 +2335,10 @@ function applyCombinedSmartMergeFromCues(refCues, refFormat) {
         startMs: start,
         endMs: Math.max(start, end),
         text: lineWords.map(w => w.text).join(' '),
-        words: lineWords.length > 0 ? lineWords.map((w, widx) => ({ ...w, id: (idx + 1) * 1000 + widx + 1 })) : null
+        words: lineWords.length > 0 ? lineWords.map((w, widx) => ({ ...w, id: (idx + 1) * 1000 + widx + 1 })) : null,
+        ...(refCue.songPart ? { songPart: refCue.songPart } : {}),
+        ...(refCue.isBackground ? { isBackground: true, role: 'x-bg' } : {}),
+        ...(refCue.agent ? { agent: refCue.agent } : {})
       });
     }
   });
@@ -2578,7 +2595,10 @@ function applySmartMergeFromCues(refCues, refFormat) {
         startMs: start,
         endMs: Math.max(start, end),
         text: lineWords.map(w => w.text).join(' '),
-        words: lineWords.length > 0 ? lineWords.map((w, widx) => ({ ...w, id: (idx + 1) * 1000 + widx + 1 })) : null
+        words: lineWords.length > 0 ? lineWords.map((w, widx) => ({ ...w, id: (idx + 1) * 1000 + widx + 1 })) : null,
+        ...(refCue.songPart ? { songPart: refCue.songPart } : {}),
+        ...(refCue.isBackground ? { isBackground: true, role: 'x-bg' } : {}),
+        ...(refCue.agent ? { agent: refCue.agent } : {})
       });
     }
   });
@@ -3247,74 +3267,170 @@ $('fr-apply').onclick=()=>{
 };
 
 // Edit Text Modal
-$('et-cancel').onclick = () => $('edit-text-modal').style.display = 'none';
+$('et-cancel').onclick = () => {
+  $('edit-text-modal').style.display = 'none';
+  editingLine = null;
+};
 
-function updateEditHighlighter() {
-    const text = $('edit-text-input').value;
-    const highlighted = text
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/\\/g, (m, offset, str) => {
-            const prev = str[offset - 1];
-            const next = str[offset + 1];
-            const isStandalone = (!prev || /\s/.test(prev)) && (!next || /\s/.test(next));
-            return isStandalone ? `<span class="marker-highlight">\\</span>` : '\\';
-        });
-    $('edit-text-backdrop').innerHTML = highlighted + (text.endsWith('\n') ? ' ' : '');
+function highlightBackdropContent(text) {
+  if (!text) return '';
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\\/g, (m, offset, str) => {
+      const prev = str[offset - 1];
+      const next = str[offset + 1];
+      const isStandalone = (!prev || /\s/.test(prev)) && (!next || /\s/.test(next));
+      return isStandalone ? `<span class="marker-highlight">\\</span>` : '\\';
+    });
+}
+
+function updateEditHighlighters() {
+  const inputs = [
+    { input: $('edit-bg-start-input'), backdrop: $('edit-bg-start-backdrop') },
+    { input: $('edit-text-input'), backdrop: $('edit-text-backdrop') },
+    { input: $('edit-bg-end-input'), backdrop: $('edit-bg-end-backdrop') }
+  ];
+
+  inputs.forEach(({ input, backdrop }) => {
+    if (input && backdrop) {
+      const text = input.value || '';
+      backdrop.innerHTML = highlightBackdropContent(text) + (text.endsWith('\n') ? ' ' : '');
+    }
+  });
 }
 
 let editSyncInterval = null;
 function startEditSync() {
-    if (editSyncInterval) clearInterval(editSyncInterval);
-    editSyncInterval = setInterval(() => {
-        const input = $('edit-text-input');
-        const backdrop = $('edit-text-backdrop');
-        if (!input || !backdrop) return;
+  if (editSyncInterval) clearInterval(editSyncInterval);
+  editSyncInterval = setInterval(() => {
+    const inputs = [
+      { input: $('edit-bg-start-input'), backdrop: $('edit-bg-start-backdrop') },
+      { input: $('edit-text-input'), backdrop: $('edit-text-backdrop') },
+      { input: $('edit-bg-end-input'), backdrop: $('edit-bg-end-backdrop') }
+    ];
+
+    inputs.forEach(({ input, backdrop }) => {
+      if (input && backdrop) {
         if (backdrop.scrollTop !== input.scrollTop) backdrop.scrollTop = input.scrollTop;
         if (backdrop.scrollLeft !== input.scrollLeft) backdrop.scrollLeft = input.scrollLeft;
-        
-        // If modal closed, stop sync
-        if ($('edit-text-modal').style.display === 'none') {
-            clearInterval(editSyncInterval);
-            editSyncInterval = null;
-        }
-    }, 32); 
+      }
+    });
+
+    if ($('edit-text-modal').style.display === 'none') {
+      clearInterval(editSyncInterval);
+      editSyncInterval = null;
+    }
+  }, 32);
 }
 
-$('edit-text-input').oninput = () => {
-    updateEditHighlighter();
-    // Debounce pushing to history or push on significant changes?
-    // For now, push on every input but maybe debounced is better.
-    pushModalHistory(); 
-};
-$('edit-text-input').onscroll = () => {
-    $('edit-text-backdrop').scrollTop = $('edit-text-input').scrollTop;
-    $('edit-text-backdrop').scrollLeft = $('edit-text-input').scrollLeft;
-};
-
-// Local Shortcuts
-$('edit-text-input').onkeydown = (e) => {
+// Track active input in modal & attach input listeners
+const editModalInputIds = ['edit-bg-start-input', 'edit-text-input', 'edit-bg-end-input'];
+editModalInputIds.forEach(id => {
+  const el = $(id);
+  if (!el) return;
+  el.addEventListener('focus', () => {
+    lastActiveEditInput = el;
+  });
+  el.addEventListener('input', () => {
+    updateEditHighlighters();
+    pushModalHistory();
+  });
+  el.addEventListener('scroll', () => {
+    const backdropId = id === 'edit-text-input' ? 'edit-text-backdrop' : (id === 'edit-bg-start-input' ? 'edit-bg-start-backdrop' : 'edit-bg-end-backdrop');
+    const bdp = $(backdropId);
+    if (bdp) {
+      bdp.scrollTop = el.scrollTop;
+      bdp.scrollLeft = el.scrollLeft;
+    }
+  });
+  el.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        e.stopPropagation();
-        modalUndo();
+      e.preventDefault();
+      e.stopPropagation();
+      modalUndo();
     }
     if (e.ctrlKey && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
-        e.preventDefault();
-        e.stopPropagation();
-        modalRedo();
+      e.preventDefault();
+      e.stopPropagation();
+      modalRedo();
     }
-};
+  });
+  if (id === 'edit-bg-start-input' || id === 'edit-bg-end-input') {
+    el.addEventListener('blur', () => {
+      const val = el.value.trim();
+      if (val && (!val.startsWith('(') || !val.endsWith(')'))) {
+        el.value = ensureParentheses(val);
+        updateEditHighlighters();
+        pushModalHistory();
+      }
+    });
+  }
+  ['change', 'blur'].forEach(evt => {
+    el.addEventListener(evt, () => {
+      setTimeout(updateEditHighlighters, 10);
+    });
+  });
+});
+
+// Add / Remove Background Vocal Section Buttons
+if ($('btn-add-bg-start')) {
+  $('btn-add-bg-start').onclick = () => {
+    $('edit-bg-start-section').style.display = 'block';
+    $('btn-add-bg-start').style.display = 'none';
+    $('edit-bg-start-input').focus();
+    lastActiveEditInput = $('edit-bg-start-input');
+    updateEditHighlighters();
+    pushModalHistory();
+  };
+}
+
+if ($('btn-remove-bg-start')) {
+  $('btn-remove-bg-start').onclick = () => {
+    $('edit-bg-start-input').value = '';
+    $('edit-bg-start-section').style.display = 'none';
+    $('btn-add-bg-start').style.display = 'flex';
+    updateEditHighlighters();
+    pushModalHistory();
+    $('edit-text-input').focus();
+    lastActiveEditInput = $('edit-text-input');
+  };
+}
+
+if ($('btn-add-bg-end')) {
+  $('btn-add-bg-end').onclick = () => {
+    $('edit-bg-end-section').style.display = 'block';
+    $('btn-add-bg-end').style.display = 'none';
+    $('edit-bg-end-input').focus();
+    lastActiveEditInput = $('edit-bg-end-input');
+    updateEditHighlighters();
+    pushModalHistory();
+  };
+}
+
+if ($('btn-remove-bg-end')) {
+  $('btn-remove-bg-end').onclick = () => {
+    $('edit-bg-end-input').value = '';
+    $('edit-bg-end-section').style.display = 'none';
+    $('btn-add-bg-end').style.display = 'flex';
+    updateEditHighlighters();
+    pushModalHistory();
+    $('edit-text-input').focus();
+    lastActiveEditInput = $('edit-text-input');
+  };
+}
 
 // Mouse-based text drag-and-drop for edit textarea
 (function() {
-    const input = $('edit-text-input');
     const dropCursor = $('edit-drop-cursor');
     let drag = null;
 
-    // Get character index + visual position at a given screen coordinate
-    function charPosAt(cx, cy) {
+    function getActiveInput() {
+        return lastActiveEditInput || $('edit-text-input');
+    }
+
+    function charPosAt(input, cx, cy) {
         const text = input.value;
         if (!text) return { idx: 0, x: 0, y: 0 };
         const cs = getComputedStyle(input);
@@ -3349,40 +3465,46 @@ $('edit-text-input').onkeydown = (e) => {
             if (d < bestD) { bestD = d; best = i; bestX = charX; bestY = charY; }
         }
         document.body.removeChild(m);
-        // Convert back to screen-relative coords within the wrapper
         return { idx: best, x: padL + bdrL + bestX - input.scrollLeft, y: padT + bdrT + bestY - input.scrollTop };
     }
 
     function showDropCursor(x, y) {
+        if (!dropCursor) return;
         dropCursor.style.display = 'block';
         dropCursor.style.left = x + 'px';
         dropCursor.style.top = y + 'px';
     }
 
     function hideDropCursor() {
+        if (!dropCursor) return;
         dropCursor.style.display = 'none';
     }
 
-    input.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return;
-        const s = input.selectionStart, ed = input.selectionEnd;
-        if (s === ed) return;
-        const { idx } = charPosAt(e.clientX, e.clientY);
-        if (idx >= s && idx <= ed) {
-            e.preventDefault();
-            drag = { text: input.value.substring(s, ed), start: s, end: ed,
-                     sx: e.clientX, sy: e.clientY, active: false };
-        }
+    editModalInputIds.forEach(id => {
+        const input = $(id);
+        if (!input) return;
+
+        input.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            const s = input.selectionStart, ed = input.selectionEnd;
+            if (s === ed) return;
+            const { idx } = charPosAt(input, e.clientX, e.clientY);
+            if (idx >= s && idx <= ed) {
+                e.preventDefault();
+                drag = { input, text: input.value.substring(s, ed), start: s, end: ed,
+                         sx: e.clientX, sy: e.clientY, active: false };
+            }
+        });
     });
 
     document.addEventListener('mousemove', (e) => {
         if (!drag) return;
         if (!drag.active && (Math.abs(e.clientX - drag.sx) > 3 || Math.abs(e.clientY - drag.sy) > 3)) {
             drag.active = true;
-            input.style.cursor = 'grabbing';
+            drag.input.style.cursor = 'grabbing';
         }
         if (drag.active) {
-            const { idx, x, y } = charPosAt(e.clientX, e.clientY);
+            const { idx, x, y } = charPosAt(drag.input, e.clientX, e.clientY);
             if (idx < drag.start || idx > drag.end) {
                 showDropCursor(x, y);
             } else {
@@ -3393,11 +3515,11 @@ $('edit-text-input').onkeydown = (e) => {
 
     document.addEventListener('mouseup', (e) => {
         if (!drag) return;
-        input.style.cursor = '';
+        drag.input.style.cursor = '';
         hideDropCursor();
         if (drag.active) {
-            const { idx: dropPos } = charPosAt(e.clientX, e.clientY);
-            const { text: dragged, start: os, end: oe } = drag;
+            const { idx: dropPos } = charPosAt(drag.input, e.clientX, e.clientY);
+            const { input, text: dragged, start: os, end: oe } = drag;
             if (dropPos < os || dropPos > oe) {
                 const val = input.value;
                 let nv, cur;
@@ -3410,67 +3532,63 @@ $('edit-text-input').onkeydown = (e) => {
                 }
                 input.value = nv;
                 input.setSelectionRange(cur - dragged.length, cur);
-                updateEditHighlighter();
+                updateEditHighlighters();
                 pushModalHistory();
             }
         } else {
-            const { idx } = charPosAt(e.clientX, e.clientY);
-            input.setSelectionRange(idx, idx);
+            const { idx } = charPosAt(drag.input, e.clientX, e.clientY);
+            drag.input.setSelectionRange(idx, idx);
         }
         drag = null;
     });
 })();
 
-// Sync highlighter on other interactions
-['change', 'blur'].forEach(evt => {
-    $('edit-text-input').addEventListener(evt, () => {
-        setTimeout(() => { updateEditHighlighter(); }, 10);
-    });
-});
-
 $('btn-edit-undo').onclick = modalUndo;
 $('btn-edit-redo').onclick = modalRedo;
 
+function getTargetEditInput() {
+  return lastActiveEditInput || $('edit-text-input');
+}
+
 $('btn-insert-blank').onclick = () => {
-    const input = $('edit-text-input');
+    const input = getTargetEditInput();
+    if (!input) return;
     const start = input.selectionStart;
     const end = input.selectionEnd;
     const text = input.value;
     const insert = " \\ ";
     input.value = text.substring(0, start) + insert + text.substring(end);
-    updateEditHighlighter();
+    updateEditHighlighters();
     pushModalHistory();
     input.focus();
     input.selectionStart = input.selectionEnd = start + insert.length;
 };
 
 $('btn-remove-blank').onclick = () => {
-    const input = $('edit-text-input');
-    // Remove \ and up to one space on each side to cleanly rejoin split words like "ente \ rpr \ ise"
+    const input = getTargetEditInput();
+    if (!input) return;
     input.value = input.value.replace(/\s?[\\]\s?/g, '').replace(/\s+/g, ' ').trim();
-    updateEditHighlighter();
+    updateEditHighlighters();
     pushModalHistory();
     input.focus();
 };
 
 $('btn-join-words').onclick = () => {
-    const input = $('edit-text-input');
+    const input = getTargetEditInput();
+    if (!input) return;
     const start = input.selectionStart;
     const end = input.selectionEnd;
     
     if (start !== end) {
-        // Join only selected text
         const selectedText = input.value.substring(start, end);
         const joined = selectedText.replace(/\s+/g, '');
         input.value = input.value.substring(0, start) + joined + input.value.substring(end);
-        // Restore selection to the joined part
         input.setSelectionRange(start, start + joined.length);
     } else {
-        // Join all text (existing behavior)
         input.value = input.value.replace(/\s+/g, '');
     }
     
-    updateEditHighlighter();
+    updateEditHighlighters();
     pushModalHistory();
     input.focus();
 };
@@ -3496,34 +3614,26 @@ $('sw-dec').onclick = () => {
     }
 };
 
-function formatWordsForEdit(line) {
-  if (!line.words || line.words.length === 0) {
-    let txt = line.text ? line.text.replace(/\s+/g, ' ').trim() : "";
-    if (line.isBackground || line.role === 'x-bg') {
-      if (!txt.startsWith('(') && !txt.endsWith(')')) txt = `(${txt})`;
-    }
-    return txt;
-  }
-  
-  const isLineBg = !!(line.isBackground || line.role === 'x-bg');
-  const hasBgWords = line.words.some(w => w.isBackground || w.role === 'x-bg');
-  const hasLineOrBg = isLineBg || hasBgWords;
+function ensureParentheses(text) {
+  if (!text) return '';
+  let t = text.trim();
+  if (!t) return '';
+  if (!t.startsWith('(')) t = '(' + t;
+  if (!t.endsWith(')')) t = t + ')';
+  return t;
+}
 
+function formatLineDisplayText(words, isLineBg) {
+  if (!words || words.length === 0) return '';
   let formatted = [];
   let inBgGroup = false;
 
-  for (let i = 0; i < line.words.length; i++) {
-    const w = line.words[i];
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
     const isBg = !!(w.isBackground || w.role === 'x-bg' || isLineBg);
-    const isBlankGhost = (w.text === undefined || w.text === null || w.text === "" || w.text === "\\");
-
-    // Hide auto-created ghost words on lines that have background vocals (or for background vocal ghost words)
-    if (isBlankGhost && (isBg || hasLineOrBg)) {
-      continue;
-    }
-
     let wText = (w.text !== undefined && w.text !== null && w.text !== "") ? w.text : "\\";
-    
+    if (wText === '\\') continue;
+
     const hasOpen = wText.startsWith('(');
     const hasClose = wText.endsWith(')');
 
@@ -3549,496 +3659,584 @@ function formatWordsForEdit(line) {
     formatted[formatted.length - 1] += ')';
   }
 
-  return formatted.join(' ');
+  return formatted.join(' ').replace(/\s+/g, ' ').trim();
 }
 
-function parseEditTokens(inputVal, lineIsBg = false) {
+function separateLineWordsForEdit(line) {
+  if (!line.words || line.words.length === 0) {
+    let txt = (line.text || "").trim();
+    if (line.isBackground || line.role === 'x-bg') {
+      return { startBg: '', main: ensureParentheses(txt.replace(/^\((.*)\)$/, '$1')), endBg: '', isPureBg: true };
+    }
+    const matchStart = txt.match(/^\(([^\)]+)\)\s*(.*)$/);
+    if (matchStart && matchStart[2]) {
+      return { startBg: ensureParentheses(matchStart[1].trim()), main: matchStart[2].trim(), endBg: '', isPureBg: false };
+    }
+    const matchEnd = txt.match(/^(.*?)\s*\(([^\)]+)\)$/);
+    if (matchEnd && matchEnd[1]) {
+      return { startBg: '', main: matchEnd[1].trim(), endBg: ensureParentheses(matchEnd[2].trim()), isPureBg: false };
+    }
+    return { startBg: '', main: txt, endBg: '', isPureBg: false };
+  }
+
+  const isLineBg = !!(line.isBackground || line.role === 'x-bg');
+  const allBg = line.words.every(w => w.isBackground || w.role === 'x-bg');
+
+  function formatWordList(arr) {
+    return arr.map(w => {
+      let t = (w.text !== undefined && w.text !== null && w.text !== "") ? w.text : "\\";
+      return t.replace(/^\(/, '').replace(/\)$/, '');
+    }).join(' ');
+  }
+
+  function formatBgWordList(arr) {
+    if (!arr || arr.length === 0) return '';
+    const text = formatWordList(arr).trim();
+    return ensureParentheses(text);
+  }
+
+  if (isLineBg || allBg) {
+    return { startBg: '', main: ensureParentheses(formatWordList(line.words)), endBg: '', isPureBg: true };
+  }
+
+  // Find range of main words
+  let firstMainIdx = -1;
+  let lastMainIdx = -1;
+  for (let i = 0; i < line.words.length; i++) {
+    const isBg = !!(line.words[i].isBackground || line.words[i].role === 'x-bg');
+    if (!isBg) {
+      if (firstMainIdx === -1) firstMainIdx = i;
+      lastMainIdx = i;
+    }
+  }
+
+  if (firstMainIdx === -1) {
+    return { startBg: '', main: ensureParentheses(formatWordList(line.words)), endBg: '', isPureBg: true };
+  }
+
+  const startWords = line.words.slice(0, firstMainIdx).filter(w => (w.text !== undefined && w.text !== null && w.text !== "") || w.text === "\\");
+  const mainWords = line.words.slice(firstMainIdx, lastMainIdx + 1);
+  const endWords = line.words.slice(lastMainIdx + 1).filter(w => (w.text !== undefined && w.text !== null && w.text !== "") || w.text === "\\");
+
+  return {
+    startBg: formatBgWordList(startWords),
+    main: formatWordList(mainWords),
+    endBg: formatBgWordList(endWords),
+    isPureBg: false
+  };
+}
+
+function openEditTextModal(line) {
+  editingLine = line;
+  const splitData = separateLineWordsForEdit(line);
+
+  if ($('edit-bg-start-input')) $('edit-bg-start-input').value = splitData.startBg;
+  if ($('edit-text-input')) $('edit-text-input').value = splitData.main;
+  if ($('edit-bg-end-input')) $('edit-bg-end-input').value = splitData.endBg;
+
+  const showStart = splitData.startBg.length > 0;
+  if ($('edit-bg-start-section')) $('edit-bg-start-section').style.display = showStart ? 'block' : 'none';
+  if ($('btn-add-bg-start')) $('btn-add-bg-start').style.display = showStart ? 'none' : 'flex';
+
+  const showEnd = splitData.endBg.length > 0;
+  if ($('edit-bg-end-section')) $('edit-bg-end-section').style.display = showEnd ? 'block' : 'none';
+  if ($('btn-add-bg-end')) $('btn-add-bg-end').style.display = showEnd ? 'none' : 'flex';
+
+  $('edit-keep-structure').checked = false;
+  lastActiveEditInput = $('edit-text-input');
+
+  updateEditHighlighters();
+
+  modalHistory = [];
+  modalHistIdx = -1;
+  pushModalHistory();
+
+  $('edit-text-modal').style.display = 'flex';
+  $('edit-text-input').focus();
+
+  startEditSync();
+}
+
+function parseSectionTokens(inputVal, defaultIsBg = false) {
+  if (!inputVal) return [];
   const rawParts = inputVal.replace(/([\\])/g, ' $1 ').split(/\s+/).filter(t => t);
   const tokens = [];
   let inParenthesis = false;
 
   for (let i = 0; i < rawParts.length; i++) {
     let t = rawParts[i];
-    
     let openCount = 0;
     while (t.startsWith('(')) {
       openCount++;
       t = t.slice(1);
     }
-    
     let closeCount = 0;
     while (t.endsWith(')')) {
       closeCount++;
       t = t.slice(0, -1);
     }
-
-    if (openCount > 0) {
-      inParenthesis = true;
-    }
-
-    const currentBg = inParenthesis || lineIsBg;
-
+    if (openCount > 0) inParenthesis = true;
+    const currentBg = inParenthesis || defaultIsBg;
     if (t !== '') {
       tokens.push({
         text: (t === '\\') ? '' : t,
         rawText: t,
-        isBackground: currentBg,
-        tokenIdx: tokens.length
+        isBackground: currentBg
       });
     }
-
-    if (closeCount > 0) {
-      inParenthesis = false;
-    }
+    if (closeCount > 0) inParenthesis = false;
   }
-
   return tokens;
 }
 
 $('et-apply').onclick = () => {
-  const inputVal = $('edit-text-input').value.trim();
-  if (editingLine) {
-    const isLineBg = !!(editingLine.isBackground || editingLine.role === 'x-bg');
-    const newTokens = parseEditTokens(inputVal, isLineBg);
-    
-    if (newTokens.length === 0) {
-      editingLine.words = [];
-      editingLine.text = "";
-      pushHistory(); renderTimeline();
-      $('edit-text-modal').style.display = 'none';
-      editingLine = null;
-      return;
-    }
+  if (!editingLine) {
+    $('edit-text-modal').style.display = 'none';
+    return;
+  }
 
-    const hasBgWords = editingLine.words && editingLine.words.some(w => w.isBackground || w.role === 'x-bg');
-    const isLineOrBg = isLineBg || hasBgWords;
+  const showStart = $('edit-bg-start-section') && $('edit-bg-start-section').style.display !== 'none';
+  const showEnd = $('edit-bg-end-section') && $('edit-bg-end-section').style.display !== 'none';
 
-    const oldWords = (editingLine.words && editingLine.words.length > 0)
-        ? (isLineOrBg
-            ? editingLine.words.filter(w => w.text !== undefined && w.text !== null && w.text !== "" && w.text !== "\\")
-            : editingLine.words)
-        : editingLine.text.trim().split(/\s+/).filter(t => t).map((t, i, arr) => {
-            const p = (editingLine.endMs - editingLine.startMs) / arr.length;
-            const tClean = t.replace(/[\(\)]/g, '');
-            return {
-                id: `tmp-${Date.now()}-${i}`,
-                text: tClean,
-                startMs: Math.round(editingLine.startMs + p * i),
-                endMs: Math.round(editingLine.startMs + p * (i + 1)),
-                isBackground: isLineBg || (t.startsWith('(') && t.endsWith(')'))
-            };
-        });
+  let startVal = showStart && $('edit-bg-start-input') ? $('edit-bg-start-input').value.trim() : '';
+  const mainVal = $('edit-text-input') ? $('edit-text-input').value.trim() : '';
+  let endVal = showEnd && $('edit-bg-end-input') ? $('edit-bg-end-input').value.trim() : '';
 
-    const keepStructure = $('edit-keep-structure').checked;
+  if (startVal) {
+    startVal = ensureParentheses(startVal);
+    if ($('edit-bg-start-input')) $('edit-bg-start-input').value = startVal;
+  }
+  if (endVal) {
+    endVal = ensureParentheses(endVal);
+    if ($('edit-bg-end-input')) $('edit-bg-end-input').value = endVal;
+  }
 
-    // 1-to-1 bypass if word counts match exactly AND Keep Word Timings is checked
-    if (newTokens.length === oldWords.length && keepStructure) {
-      const resultWords = oldWords.map((w, i) => {
-        const isBg = newTokens[i].isBackground;
-        return {
-          ...w,
-          text: (newTokens[i].text === '\\') ? "" : newTokens[i].text,
-          isBackground: isBg,
-          role: isBg ? 'x-bg' : null,
-          tokenIdx: i
-        };
+  const isLineBg = !!(editingLine.isBackground || editingLine.role === 'x-bg');
+  const startTokens = parseSectionTokens(startVal, true);
+  const mainTokens = parseSectionTokens(mainVal, isLineBg && !showStart && !showEnd);
+  const endTokens = parseSectionTokens(endVal, true);
+
+  const newTokens = [];
+  startTokens.forEach(t => newTokens.push({ ...t, tokenIdx: newTokens.length, isStartBg: true }));
+  mainTokens.forEach(t => newTokens.push({ ...t, tokenIdx: newTokens.length, isMain: true }));
+  endTokens.forEach(t => newTokens.push({ ...t, tokenIdx: newTokens.length, isEndBg: true }));
+
+  if (newTokens.length === 0) {
+    editingLine.words = [];
+    editingLine.text = "";
+    pushHistory(); renderTimeline();
+    $('edit-text-modal').style.display = 'none';
+    editingLine = null;
+    return;
+  }
+
+  const hasBgWords = editingLine.words && editingLine.words.some(w => w.isBackground || w.role === 'x-bg');
+  const isLineOrBg = isLineBg || hasBgWords;
+
+  const oldWords = (editingLine.words && editingLine.words.length > 0)
+      ? (isLineOrBg
+          ? editingLine.words.filter(w => w.text !== undefined && w.text !== null && w.text !== "" && w.text !== "\\")
+          : editingLine.words)
+      : editingLine.text.trim().split(/\s+/).filter(t => t).map((t, i, arr) => {
+          const p = (editingLine.endMs - editingLine.startMs) / arr.length;
+          const tClean = t.replace(/[\(\)]/g, '');
+          return {
+              id: `tmp-${Date.now()}-${i}`,
+              text: tClean,
+              startMs: Math.round(editingLine.startMs + p * i),
+              endMs: Math.round(editingLine.startMs + p * (i + 1)),
+              isBackground: isLineBg || (t.startsWith('(') && t.endsWith(')'))
+          };
       });
 
-      editingLine.words = resultWords;
-      editingLine.text = resultWords.map(w => w.text).join(' ').replace(/\s+/g, ' ').trim();
-      pushHistory(); renderTimeline();
-      $('edit-text-modal').style.display = 'none';
-      editingLine = null;
-      return;
-    }
+  const keepStructure = $('edit-keep-structure').checked;
 
-    // Compute default sequential timings for newly introduced channels/words
-    const defaultP = (editingLine.endMs - editingLine.startMs) / newTokens.length;
-    const defaultTimings = newTokens.map((t, i) => ({
-      startMs: Math.round(editingLine.startMs + defaultP * i),
-      endMs: Math.round(editingLine.startMs + defaultP * (i + 1))
-    }));
-
-    // Classify new tokens into Main and Background channels with default timing fallbacks
-    const mainTokens = [];
-    const bgTokens = [];
-    newTokens.forEach((t, i) => {
-      const tObj = {
-        text: t.text,
-        rawText: t.rawText,
-        isBackground: t.isBackground,
-        tokenIdx: i,
-        defaultStartMs: defaultTimings[i].startMs,
-        defaultEndMs: defaultTimings[i].endMs
+  // 1-to-1 bypass if word counts match exactly AND Keep Word Timings is checked
+  if (newTokens.length === oldWords.length && keepStructure) {
+    const resultWords = oldWords.map((w, i) => {
+      const isBg = newTokens[i].isBackground;
+      return {
+        ...w,
+        text: (newTokens[i].text === '\\') ? "" : newTokens[i].text,
+        isBackground: isBg,
+        role: isBg ? 'x-bg' : null,
+        tokenIdx: i
       };
-      if (t.isBackground) {
-        bgTokens.push(tObj);
-      } else {
-        mainTokens.push(tObj);
-      }
     });
 
-    // Clean text helper for matching words between channels
-    function cleanTextForMatch(txt) {
-      return (txt || "").replace(/[\(\)]/g, '').toLowerCase().trim();
+    editingLine.words = resultWords;
+    editingLine.text = formatLineDisplayText(resultWords, isLineBg);
+    pushHistory(); renderTimeline();
+    $('edit-text-modal').style.display = 'none';
+    editingLine = null;
+    return;
+  }
+
+  // Compute default timings for newly added words
+  const defaultP = (editingLine.endMs - editingLine.startMs) / Math.max(1, newTokens.length);
+  const targetMainTokens = [];
+  const targetBgTokens = [];
+
+  newTokens.forEach((t, i) => {
+    let defStart = Math.round(editingLine.startMs + defaultP * i);
+    let defEnd = Math.round(editingLine.startMs + defaultP * (i + 1));
+
+    if (t.isStartBg) {
+      defStart = Math.round(editingLine.startMs + (i * 300));
+      defEnd = Math.round(editingLine.startMs + ((i + 1) * 300));
+    } else if (t.isEndBg) {
+      const endOffset = (endTokens.length - (i - startTokens.length - mainTokens.length));
+      defStart = Math.max(editingLine.startMs, Math.round(editingLine.endMs - (endOffset * 300)));
+      defEnd = Math.max(editingLine.startMs, Math.round(editingLine.endMs - ((endOffset - 1) * 300)));
     }
 
-    // Classify old words by matching them to the new tokens' target channels
-    const oldMainWords = [];
-    const oldBgWords = [];
-    const usedTokenIdxs = new Set();
+    const tObj = {
+      text: t.text,
+      rawText: t.rawText,
+      isBackground: t.isBackground,
+      tokenIdx: i,
+      defaultStartMs: defStart,
+      defaultEndMs: defEnd
+    };
 
-    oldWords.forEach(w => {
-      const wClean = cleanTextForMatch(w.text);
-      const isOldBg = !!(w.isBackground || w.role === 'x-bg');
+    if (t.isBackground) {
+      targetBgTokens.push(tObj);
+    } else {
+      targetMainTokens.push(tObj);
+    }
+  });
 
-      let matchedIdx = -1;
-      for (let j = 0; j < newTokens.length; j++) {
-        if (!usedTokenIdxs.has(j) && newTokens[j].isBackground === isOldBg && cleanTextForMatch(newTokens[j].text) === wClean) {
-          matchedIdx = j;
-          break;
-        }
-      }
-      if (matchedIdx === -1) {
-        for (let j = 0; j < newTokens.length; j++) {
-          if (!usedTokenIdxs.has(j) && cleanTextForMatch(newTokens[j].text) === wClean) {
-            matchedIdx = j;
-            break;
-          }
-        }
-      }
+  // Clean text helper for matching words between channels
+  function cleanTextForMatch(txt) {
+    return (txt || "").replace(/[\(\)]/g, '').toLowerCase().trim();
+  }
 
-      if (matchedIdx !== -1) {
-        usedTokenIdxs.add(matchedIdx);
-        if (newTokens[matchedIdx].isBackground) {
-          oldBgWords.push(w);
-        } else {
-          oldMainWords.push(w);
-        }
-      } else {
-        // Fallback for deleted words: place in their original channel
-        if (isOldBg) {
-          oldBgWords.push(w);
-        } else {
-          oldMainWords.push(w);
-        }
-      }
-    });
+  // Classify old words by channel
+  const oldMainWords = [];
+  const oldBgWords = [];
+  oldWords.forEach(w => {
+    if (w.isBackground || w.role === 'x-bg') {
+      oldBgWords.push(w);
+    } else {
+      oldMainWords.push(w);
+    }
+  });
 
-    // keepStructure defined at top of handler
+  function alignChannel(tokens, channelOldWords, isBgChannel) {
+    if (tokens.length === 0) return [];
+    if (channelOldWords.length === 0) {
+      return tokens.map((tObj, i) => {
+        return {
+          id: `tmp-${Date.now()}-${isBgChannel ? 'bg' : 'main'}-${i}-${Math.random()}`,
+          text: (tObj.text === '\\') ? "" : tObj.text,
+          startMs: tObj.defaultStartMs,
+          endMs: tObj.defaultEndMs,
+          isBackground: isBgChannel,
+          role: isBgChannel ? 'x-bg' : null,
+          agent: editingLine.agent,
+          tokenIdx: tObj.tokenIdx
+        };
+      });
+    }
 
-    function alignChannel(tokens, channelOldWords, isBgChannel) {
-      if (tokens.length === 0) return [];
-      if (channelOldWords.length === 0) {
-        return tokens.map((tObj, i) => {
+    // If lengths match
+    if (tokens.length === channelOldWords.length) {
+      if (keepStructure) {
+        return channelOldWords.map((w, i) => {
           return {
-            id: `tmp-${Date.now()}-${isBgChannel ? 'bg' : 'main'}-${i}-${Math.random()}`,
-            text: (tObj.text === '\\') ? "" : tObj.text,
-            startMs: tObj.defaultStartMs,
-            endMs: tObj.defaultEndMs,
+            ...w,
+            text: (tokens[i].text === '\\') ? "" : tokens[i].text,
+            isBackground: isBgChannel,
+            role: isBgChannel ? 'x-bg' : null,
+            tokenIdx: tokens[i].tokenIdx
+          };
+        });
+      } else {
+        const usedOld = new Set();
+        const matched = new Array(tokens.length).fill(null);
+
+        tokens.forEach((tObj, i) => {
+          const text = (tObj.text === '\\') ? "" : tObj.text;
+          const matchIdx = channelOldWords.findIndex((ow, idx) =>
+            !usedOld.has(idx) && ow.text.toLowerCase() === text.toLowerCase()
+          );
+          if (matchIdx !== -1) {
+            matched[i] = {
+              text: text,
+              duration: channelOldWords[matchIdx].endMs - channelOldWords[matchIdx].startMs,
+              id: channelOldWords[matchIdx].id,
+              agent: channelOldWords[matchIdx].agent,
+              confidence: channelOldWords[matchIdx].confidence !== undefined ? channelOldWords[matchIdx].confidence : channelOldWords[matchIdx].score,
+              tokenIdx: tObj.tokenIdx
+            };
+            usedOld.add(matchIdx);
+          }
+        });
+
+        const remainingOld = channelOldWords.filter((_, idx) => !usedOld.has(idx));
+        let remIdx = 0;
+        tokens.forEach((tObj, i) => {
+          if (!matched[i]) {
+            const text = (tObj.text === '\\') ? "" : tObj.text;
+            if (remIdx < remainingOld.length) {
+              matched[i] = {
+                text: text,
+                duration: remainingOld[remIdx].endMs - remainingOld[remIdx].startMs,
+                id: remainingOld[remIdx].id,
+                agent: remainingOld[remIdx].agent,
+                confidence: remainingOld[remIdx].confidence !== undefined ? remainingOld[remIdx].confidence : remainingOld[remIdx].score,
+                tokenIdx: tObj.tokenIdx
+              };
+              remIdx++;
+            } else {
+              matched[i] = {
+                text: text,
+                duration: 50,
+                id: Date.now() + i + Math.random(),
+                agent: editingLine.agent,
+                tokenIdx: tObj.tokenIdx
+              };
+            }
+          }
+        });
+
+        // Calculate original gaps in this channel
+        const gaps = [];
+        for (let k = 0; k < channelOldWords.length - 1; k++) {
+          gaps.push(Math.max(0, channelOldWords[k+1].startMs - channelOldWords[k].endMs));
+        }
+
+        // Place matched words sequentially within this channel's span, preserving original gaps
+        const channelStart = channelOldWords[0].startMs;
+        const channelEnd = channelOldWords[channelOldWords.length - 1].endMs;
+        const totalSpan = channelEnd - channelStart;
+        const totalDur = matched.reduce((sum, m) => sum + m.duration, 0);
+        const totalGaps = gaps.reduce((sum, g) => sum + g, 0);
+
+        let cursor = channelStart;
+        const resultWords = matched.map((m, i) => {
+          const scale = (totalSpan - totalGaps > 0 && totalDur > 0) ? (totalSpan - totalGaps) / totalDur : 1;
+          const dur = m.duration * scale;
+          const word = {
+            id: m.id,
+            text: m.text,
+            startMs: Math.round(cursor),
+            endMs: Math.round(cursor + dur),
+            isBackground: isBgChannel,
+            role: isBgChannel ? 'x-bg' : null,
+            agent: m.agent,
+            ...(m.confidence !== undefined ? { confidence: m.confidence } : {}),
+            tokenIdx: m.tokenIdx
+          };
+          cursor = word.endMs;
+          if (i < gaps.length) {
+            cursor += gaps[i];
+          }
+          return word;
+        });
+        resultWords[resultWords.length - 1].endMs = channelEnd;
+        return resultWords;
+      }
+    }
+
+    // If keepStructure is true but lengths differ
+    if (keepStructure) {
+      const resultWords = [];
+      tokens.forEach((tObj, i) => {
+        const text = (tObj.text === '\\') ? "" : tObj.text;
+        if (i < channelOldWords.length) {
+          resultWords.push({ 
+            ...channelOldWords[i], 
+            text: text,
+            isBackground: isBgChannel,
+            role: isBgChannel ? 'x-bg' : null,
+            tokenIdx: tObj.tokenIdx
+          });
+        } else {
+          const last = resultWords[resultWords.length - 1];
+          const start = last ? last.endMs : (channelOldWords.length ? channelOldWords[channelOldWords.length-1].endMs : editingLine.startMs);
+          resultWords.push({ 
+            id: Date.now() + i + Math.random(), 
+            text: text, 
+            startMs: start, 
+            endMs: Math.max(start + 100, editingLine.endMs),
             isBackground: isBgChannel,
             role: isBgChannel ? 'x-bg' : null,
             agent: editingLine.agent,
             tokenIdx: tObj.tokenIdx
-          };
+          });
+        }
+      });
+      for (let i = tokens.length; i < channelOldWords.length; i++) {
+        resultWords.push({ 
+          ...channelOldWords[i], 
+          text: "",
+          isBackground: isBgChannel,
+          role: isBgChannel ? 'x-bg' : null,
+          tokenIdx: tokens[tokens.length - 1] ? tokens[tokens.length - 1].tokenIdx + 0.1 * (i - tokens.length + 1) : i
+        });
+      }
+      return resultWords;
+    }
+
+    // Smart Alignment (LCS)
+    function getLCS(arr1, arr2) {
+      const n = arr1.length, m = arr2.length;
+      const dp = Array.from({length: n+1}, () => Array(m+1).fill(0));
+      for (let i=1; i<=n; i++) {
+        for (let j=1; j<=m; j++) {
+          const w1 = cleanTextForMatch(arr1[i-1].text);
+          const w2 = cleanTextForMatch(arr2[j-1].text);
+          const isMatch = (w1 === w2) || (w1 === "" && (w2 === "" || w2 === "\\"));
+          if (isMatch) dp[i][j] = dp[i-1][j-1] + 1;
+          else dp[i][j] = Math.max(dp[i-1][j], dp[i][j-1]);
+        }
+      }
+      const res = []; let i=n, j=m;
+      while (i>0 && j>0) {
+        const w1 = cleanTextForMatch(arr1[i-1].text);
+        const w2 = cleanTextForMatch(arr2[j-1].text);
+        const isMatch = (w1 === w2) || (w1 === "" && (w2 === "" || w2 === "\\"));
+        if (isMatch) {
+          res.unshift({oldIdx: i-1, newIdx: j-1}); i--; j--;
+        } else if (dp[i-1][j] > dp[i][j-1]) i--; else j--;
+      }
+      return res;
+    }
+
+    const anchors = getLCS(channelOldWords, tokens);
+    const resultWords = [];
+
+    const channelStart = channelOldWords[0].startMs;
+    const channelEnd = channelOldWords[channelOldWords.length - 1].endMs;
+
+    const fullAnchors = [
+      {oldIdx: -1, newIdx: -1, endMs: channelStart},
+      ...anchors.map(a => ({...a, startMs: channelOldWords[a.oldIdx].startMs, endMs: channelOldWords[a.oldIdx].endMs})),
+      {oldIdx: channelOldWords.length, newIdx: tokens.length, startMs: channelEnd}
+    ];
+
+    for (let i = 0; i < fullAnchors.length - 1; i++) {
+      const curr = fullAnchors[i], next = fullAnchors[i+1];
+
+      if (curr.oldIdx !== -1) {
+        resultWords.push({
+          ...channelOldWords[curr.oldIdx],
+          text: (tokens[curr.newIdx].text === "\\") ? "" : tokens[curr.newIdx].text,
+          isBackground: isBgChannel,
+          role: isBgChannel ? 'x-bg' : null,
+          tokenIdx: tokens[curr.newIdx].tokenIdx
         });
       }
 
-      // If lengths match
-      if (tokens.length === channelOldWords.length) {
-        if (keepStructure) {
-          return channelOldWords.map((w, i) => {
-            return {
-              ...w,
-              text: (tokens[i].text === '\\') ? "" : tokens[i].text,
+      const oldGapStart = curr.oldIdx === -1 ? curr.endMs : channelOldWords[curr.oldIdx].endMs;
+      const oldGapEnd = next.oldIdx === channelOldWords.length ? next.startMs : channelOldWords[next.oldIdx].startMs;
+
+      const oldInGap = channelOldWords.slice(curr.oldIdx + 1, next.oldIdx);
+      const newInGap = tokens.slice(curr.newIdx + 1, next.newIdx);
+
+      if (newInGap.length > 0) {
+        if (oldInGap.length > 0) {
+          const spanStart = oldInGap[0].startMs;
+          const spanEnd = oldInGap[oldInGap.length - 1].endMs;
+          const dur = spanEnd - spanStart;
+          const perW = dur / newInGap.length;
+          newInGap.forEach((tObj, idx) => {
+            const isBlank = (tObj.text === "\\");
+            resultWords.push({
+              id: oldInGap[idx] ? oldInGap[idx].id : (Date.now() + Math.random()),
+              text: isBlank ? "" : tObj.text,
+              startMs: Math.round(spanStart + perW * idx),
+              endMs: Math.round(spanStart + perW * (idx + 1)),
               isBackground: isBgChannel,
               role: isBgChannel ? 'x-bg' : null,
-              tokenIdx: tokens[i].tokenIdx
-            };
-          });
-        } else {
-          const usedOld = new Set();
-          const matched = new Array(tokens.length).fill(null);
-
-          tokens.forEach((tObj, i) => {
-            const text = (tObj.text === '\\') ? "" : tObj.text;
-            const matchIdx = channelOldWords.findIndex((ow, idx) =>
-              !usedOld.has(idx) && ow.text.toLowerCase() === text.toLowerCase()
-            );
-            if (matchIdx !== -1) {
-              matched[i] = {
-                text: text,
-                duration: channelOldWords[matchIdx].endMs - channelOldWords[matchIdx].startMs,
-                id: channelOldWords[matchIdx].id,
-                agent: channelOldWords[matchIdx].agent,
-                tokenIdx: tObj.tokenIdx
-              };
-              usedOld.add(matchIdx);
-            }
-          });
-
-          const remainingOld = channelOldWords.filter((_, idx) => !usedOld.has(idx));
-          let remIdx = 0;
-          tokens.forEach((tObj, i) => {
-            if (!matched[i]) {
-              const text = (tObj.text === '\\') ? "" : tObj.text;
-              if (remIdx < remainingOld.length) {
-                matched[i] = {
-                  text: text,
-                  duration: remainingOld[remIdx].endMs - remainingOld[remIdx].startMs,
-                  id: remainingOld[remIdx].id,
-                  agent: remainingOld[remIdx].agent,
-                  tokenIdx: tObj.tokenIdx
-                };
-                remIdx++;
-              } else {
-                matched[i] = {
-                  text: text,
-                  duration: 50,
-                  id: Date.now() + i + Math.random(),
-                  agent: editingLine.agent,
-                  tokenIdx: tObj.tokenIdx
-                };
-              }
-            }
-          });
-
-          // Calculate original gaps in this channel
-          const gaps = [];
-          for (let k = 0; k < channelOldWords.length - 1; k++) {
-            gaps.push(Math.max(0, channelOldWords[k+1].startMs - channelOldWords[k].endMs));
-          }
-
-          // Place matched words sequentially within this channel's span, preserving original gaps
-          const channelStart = channelOldWords[0].startMs;
-          const channelEnd = channelOldWords[channelOldWords.length - 1].endMs;
-          const totalSpan = channelEnd - channelStart;
-          const totalDur = matched.reduce((sum, m) => sum + m.duration, 0);
-          const totalGaps = gaps.reduce((sum, g) => sum + g, 0);
-
-          let cursor = channelStart;
-          const resultWords = matched.map((m, i) => {
-            const scale = (totalSpan - totalGaps > 0 && totalDur > 0) ? (totalSpan - totalGaps) / totalDur : 1;
-            const dur = m.duration * scale;
-            const word = {
-              id: m.id,
-              text: m.text,
-              startMs: Math.round(cursor),
-              endMs: Math.round(cursor + dur),
-              isBackground: isBgChannel,
-              role: isBgChannel ? 'x-bg' : null,
-              agent: m.agent,
-              tokenIdx: m.tokenIdx
-            };
-            cursor = word.endMs;
-            if (i < gaps.length) {
-              cursor += gaps[i];
-            }
-            return word;
-          });
-          resultWords[resultWords.length - 1].endMs = channelEnd;
-          return resultWords;
-        }
-      }
-
-      // If keepStructure is true but lengths differ
-      if (keepStructure) {
-        const resultWords = [];
-        tokens.forEach((tObj, i) => {
-          const text = (tObj.text === '\\') ? "" : tObj.text;
-          if (i < channelOldWords.length) {
-            resultWords.push({ 
-              ...channelOldWords[i], 
-              text: text,
-              isBackground: isBgChannel,
-              role: isBgChannel ? 'x-bg' : null,
+              agent: oldInGap[idx] ? oldInGap[idx].agent : editingLine.agent,
+              confidence: oldInGap[idx] ? (oldInGap[idx].confidence !== undefined ? oldInGap[idx].confidence : oldInGap[idx].score) : undefined,
               tokenIdx: tObj.tokenIdx
             });
-          } else {
-            const last = resultWords[resultWords.length - 1];
-            const start = last ? last.endMs : (channelOldWords.length ? channelOldWords[channelOldWords.length-1].endMs : editingLine.startMs);
-            resultWords.push({ 
-              id: Date.now() + i + Math.random(), 
-              text: text, 
-              startMs: start, 
-              endMs: Math.max(start + 100, editingLine.endMs),
+          });
+        } else {
+          const newWordMin = 50;
+          const existingWordMin = 20;
+
+          const minNeeded = newWordMin * newInGap.length;
+          let insertStart = oldGapStart;
+          let insertEnd = oldGapEnd;
+          let available = insertEnd - insertStart;
+
+          if (available < minNeeded) {
+            const toSteal = minNeeded - available;
+            const prevWord = resultWords.length > 0 ? resultWords[resultWords.length - 1] : null;
+            const nWord = next.oldIdx < channelOldWords.length ? channelOldWords[next.oldIdx] : null;
+
+            const prevCap = prevWord ? Math.max(0, (prevWord.endMs - prevWord.startMs) - existingWordMin) : 0;
+            const nextCap = nWord ? Math.max(0, (nWord.endMs - nWord.startMs) - existingWordMin) : 0;
+            const totalCap = prevCap + nextCap;
+
+            if (totalCap > 0) {
+              const prevSteal = (prevCap / totalCap) * toSteal;
+              const nextSteal = (nextCap / totalCap) * toSteal;
+
+              if (prevWord) {
+                prevWord.endMs -= prevSteal;
+                insertStart = prevWord.endMs;
+              }
+              if (nWord) {
+                nWord.startMs += nextSteal;
+                insertEnd = nWord.startMs;
+                fullAnchors[i+1].startMs = nWord.startMs;
+              }
+            }
+          }
+
+          available = Math.max(minNeeded, insertEnd - insertStart);
+          const perW = available / newInGap.length;
+          newInGap.forEach((tObj, idx) => {
+            const isBlank = (tObj.text === "\\");
+            resultWords.push({
+              id: Date.now() + Math.random(),
+              text: isBlank ? "" : tObj.text,
+              startMs: Math.round(insertStart + perW * idx),
+              endMs: Math.round(insertStart + perW * (idx + 1)),
               isBackground: isBgChannel,
               role: isBgChannel ? 'x-bg' : null,
               agent: editingLine.agent,
               tokenIdx: tObj.tokenIdx
             });
-          }
-        });
-        for (let i = tokens.length; i < channelOldWords.length; i++) {
-          resultWords.push({ 
-            ...channelOldWords[i], 
-            text: "",
-            isBackground: isBgChannel,
-            role: isBgChannel ? 'x-bg' : null,
-            tokenIdx: tokens[tokens.length - 1] ? tokens[tokens.length - 1].tokenIdx + 0.1 * (i - tokens.length + 1) : i
           });
         }
-        return resultWords;
-      }
-
-      // Smart Alignment (LCS)
-      function getLCS(arr1, arr2) {
-        const n = arr1.length, m = arr2.length;
-        const dp = Array.from({length: n+1}, () => Array(m+1).fill(0));
-        for (let i=1; i<=n; i++) {
-          for (let j=1; j<=m; j++) {
-            const w1 = cleanTextForMatch(arr1[i-1].text);
-            const w2 = cleanTextForMatch(arr2[j-1].text);
-            const isMatch = (w1 === w2) || (w1 === "" && (w2 === "" || w2 === "\\"));
-            if (isMatch) dp[i][j] = dp[i-1][j-1] + 1;
-            else dp[i][j] = Math.max(dp[i-1][j], dp[i][j-1]);
-          }
-        }
-        const res = []; let i=n, j=m;
-        while (i>0 && j>0) {
-          const w1 = cleanTextForMatch(arr1[i-1].text);
-          const w2 = cleanTextForMatch(arr2[j-1].text);
-          const isMatch = (w1 === w2) || (w1 === "" && (w2 === "" || w2 === "\\"));
-          if (isMatch) {
-            res.unshift({oldIdx: i-1, newIdx: j-1}); i--; j--;
-          } else if (dp[i-1][j] > dp[i][j-1]) i--; else j--;
-        }
-        return res;
-      }
-
-      const anchors = getLCS(channelOldWords, tokens);
-      const resultWords = [];
-
-      const channelStart = channelOldWords[0].startMs;
-      const channelEnd = channelOldWords[channelOldWords.length - 1].endMs;
-
-      const fullAnchors = [
-        {oldIdx: -1, newIdx: -1, endMs: channelStart},
-        ...anchors.map(a => ({...a, startMs: channelOldWords[a.oldIdx].startMs, endMs: channelOldWords[a.oldIdx].endMs})),
-        {oldIdx: channelOldWords.length, newIdx: tokens.length, startMs: channelEnd}
-      ];
-
-      for (let i = 0; i < fullAnchors.length - 1; i++) {
-        const curr = fullAnchors[i], next = fullAnchors[i+1];
-
-        if (curr.oldIdx !== -1) {
-          resultWords.push({
-            ...channelOldWords[curr.oldIdx],
-            text: (tokens[curr.newIdx].text === "\\") ? "" : tokens[curr.newIdx].text,
-            isBackground: isBgChannel,
-            role: isBgChannel ? 'x-bg' : null,
-            tokenIdx: tokens[curr.newIdx].tokenIdx
-          });
-        }
-
-        const oldGapStart = curr.oldIdx === -1 ? curr.endMs : channelOldWords[curr.oldIdx].endMs;
-        const oldGapEnd = next.oldIdx === channelOldWords.length ? next.startMs : channelOldWords[next.oldIdx].startMs;
-
-        const oldInGap = channelOldWords.slice(curr.oldIdx + 1, next.oldIdx);
-        const newInGap = tokens.slice(curr.newIdx + 1, next.newIdx);
-
-        if (newInGap.length > 0) {
-          if (oldInGap.length > 0) {
-            const spanStart = oldInGap[0].startMs;
-            const spanEnd = oldInGap[oldInGap.length - 1].endMs;
-            const dur = spanEnd - spanStart;
-            const perW = dur / newInGap.length;
-            newInGap.forEach((tObj, idx) => {
-              const isBlank = (tObj.text === "\\");
-              resultWords.push({
-                id: oldInGap[idx] ? oldInGap[idx].id : (Date.now() + Math.random()),
-                text: isBlank ? "" : tObj.text,
-                startMs: Math.round(spanStart + perW * idx),
-                endMs: Math.round(spanStart + perW * (idx + 1)),
-                isBackground: isBgChannel,
-                role: isBgChannel ? 'x-bg' : null,
-                agent: oldInGap[idx] ? oldInGap[idx].agent : editingLine.agent,
-                tokenIdx: tObj.tokenIdx
-              });
-            });
-          } else {
-            const newWordMin = 50;
-            const existingWordMin = 20;
-
-            const minNeeded = newWordMin * newInGap.length;
-            let insertStart = oldGapStart;
-            let insertEnd = oldGapEnd;
-            let available = insertEnd - insertStart;
-
-            if (available < minNeeded) {
-              const toSteal = minNeeded - available;
-              const prevWord = resultWords.length > 0 ? resultWords[resultWords.length - 1] : null;
-              const nWord = next.oldIdx < channelOldWords.length ? channelOldWords[next.oldIdx] : null;
-
-              const prevCap = prevWord ? Math.max(0, (prevWord.endMs - prevWord.startMs) - existingWordMin) : 0;
-              const nextCap = nWord ? Math.max(0, (nWord.endMs - nWord.startMs) - existingWordMin) : 0;
-              const totalCap = prevCap + nextCap;
-
-              if (totalCap > 0) {
-                const prevSteal = (prevCap / totalCap) * toSteal;
-                const nextSteal = (nextCap / totalCap) * toSteal;
-
-                if (prevWord) {
-                  prevWord.endMs -= prevSteal;
-                  insertStart = prevWord.endMs;
-                }
-                if (nWord) {
-                  nWord.startMs += nextSteal;
-                  insertEnd = nWord.startMs;
-                  fullAnchors[i+1].startMs = nWord.startMs;
-                }
-              }
-            }
-
-            available = Math.max(minNeeded, insertEnd - insertStart);
-            const perW = available / newInGap.length;
-            newInGap.forEach((tObj, idx) => {
-              const isBlank = (tObj.text === "\\");
-              resultWords.push({
-                id: Date.now() + Math.random(),
-                text: isBlank ? "" : tObj.text,
-                startMs: Math.round(insertStart + perW * idx),
-                endMs: Math.round(insertStart + perW * (idx + 1)),
-                isBackground: isBgChannel,
-                role: isBgChannel ? 'x-bg' : null,
-                agent: editingLine.agent,
-                tokenIdx: tObj.tokenIdx
-              });
-            });
-          }
-        } else if (oldInGap.length > 0) {
-          const lastWord = resultWords.length > 0 ? resultWords[resultWords.length - 1] : null;
-          if (lastWord) {
-            lastWord.endMs = oldInGap[oldInGap.length - 1].endMs;
-          } else if (next.oldIdx < channelOldWords.length) {
-            channelOldWords[next.oldIdx].startMs = oldGapStart;
-            fullAnchors[i+1].startMs = oldGapStart;
-          }
+      } else if (oldInGap.length > 0) {
+        const lastWord = resultWords.length > 0 ? resultWords[resultWords.length - 1] : null;
+        if (lastWord) {
+          lastWord.endMs = oldInGap[oldInGap.length - 1].endMs;
+        } else if (next.oldIdx < channelOldWords.length) {
+          channelOldWords[next.oldIdx].startMs = oldGapStart;
+          fullAnchors[i+1].startMs = oldGapStart;
         }
       }
-
-      return resultWords;
     }
 
-    const alignedMain = alignChannel(mainTokens, oldMainWords, false);
-    const alignedBg = alignChannel(bgTokens, oldBgWords, true);
-
-    const resultWords = [...alignedMain, ...alignedBg].sort((a, b) => {
-      if (a.startMs !== b.startMs) return a.startMs - b.startMs;
-      return a.tokenIdx - b.tokenIdx;
-    });
-
-    if (resultWords.length > 0) {
-      const allStarts = resultWords.map(w => w.startMs);
-      const allEnds = resultWords.map(w => w.endMs);
-      editingLine.startMs = Math.min(...allStarts);
-      editingLine.endMs = Math.max(...allEnds);
-    }
-
-    editingLine.words = resultWords;
-    editingLine.text = resultWords.map(w => w.text).join(' ').replace(/\s+/g, ' ').trim();
-    pushHistory(); renderTimeline();
+    return resultWords;
   }
+
+  const alignedMain = alignChannel(targetMainTokens, oldMainWords, false);
+  const alignedBg = alignChannel(targetBgTokens, oldBgWords, true);
+
+  const resultWords = [...alignedMain, ...alignedBg].sort((a, b) => {
+    if (a.startMs !== b.startMs) return a.startMs - b.startMs;
+    return a.tokenIdx - b.tokenIdx;
+  });
+
+  if (resultWords.length > 0) {
+    const allStarts = resultWords.map(w => w.startMs);
+    const allEnds = resultWords.map(w => w.endMs);
+    editingLine.startMs = Math.min(...allStarts);
+    editingLine.endMs = Math.max(...allEnds);
+  }
+
+  editingLine.words = resultWords;
+  editingLine.text = formatLineDisplayText(resultWords, isLineBg);
+  pushHistory(); renderTimeline();
   $('edit-text-modal').style.display = 'none';
   editingLine = null;
 };

@@ -73,21 +73,21 @@ https://github.com/user-attachments/assets/d695af6c-2de2-4083-954b-ee181cbc72d0
 ## 📥 Supported Formats
 
 ### Import
-- LRC (Standard & Enhanced with Background Vocals)
+- LRC (Standard & Enhanced with Background Vocals & Song Parts)
 - SRT (SubRip)
 - VTT (WebVTT)
 - TTML (Timed Text Markup Language / Apple iTunes / Apple Music)
 - LRCLIB & LyricsFile (`.lyricsfile`, `.lyricsfile.yaml`, `.yaml`, `.yml`)
-- Bidirectional JSON (.json with Confidence & Agents)
+- Bidirectional JSON (.json with Confidence, Agents, & Song Parts)
 - YouTube XML (SRV1, SRV2, SRV3)
 - YouTube JSON3
 - Audacity Labels (.txt)
-- Plain Text (.txt)
+- Plain Text (.txt with automatic Song Part recognition)
 
 ### Export
 - **Subtitles**: LRC, SRT, VTT, TTML, Apple TTML (iTunes), Audacity Labels
 - **Karaoke (Word-Level)**: Enhanced LRC, VTT (Words), TTML (Words), Apple TTML (Words), LRCLIB / LyricsFile (`.lyricsfile.yaml`), YouTube SRV3 (Words), Audacity Labels (Words)
-- **Other**: YouTube SRV1/SRV2/SRV3, JSON (Bidirectional with Confidence), YouTube JSON3, LRCLIB, Plain Text
+- **Other**: YouTube SRV1/SRV2/SRV3, JSON (Bidirectional with Confidence), YouTube JSON3, Audacity Labels, LRCLIB (`.lyricsfile`), YAML (`.yaml`), Plain Text (with Song Parts), Plain Text (without Song Parts)
 
 ## 🎵 Audio Precision & Sync
 
@@ -157,6 +157,29 @@ These advanced tools are designed to fix one of the most common issues in lyric 
 | **Esc** | Close Modals / Clear Search focus |
 
 ## 🌟 What's New
+
+### v0.1.2
+
+- **Multi-Channel Edit Line Text Modal**:
+  - Redesigned the Edit Lyric Line popup modal with dedicated input channels: **Start Background Vocal (Intro)**, **Lead Vocal (Main Lyrics)**, and **End Background Vocal (Outro / Ad-lib)**.
+  - Channel-isolated timing alignment engine (`alignChannel`) ensures background vocals and main lyrics do not collide or corrupt word timestamps during editing, blank insertions, or word restructuring.
+  - Quick-action buttons to add or remove Start/End background vocal channels with a single click.
+  - Full multi-input undo/redo (`Ctrl+Z` / `Ctrl+Y`), real-time highlight synchronization, drag-and-drop text manipulation, and granular word tools (Insert/Remove Blank `\`, Join Words).
+- **Automatic Parentheses `(...)` Formatting for Background Vocals**:
+  - Background vocal textareas automatically display and wrap words in `( ... )`.
+  - Automatically encloses missing parentheses on typing, blur, and applying changes without manual formatting.
+- **Song Part Auto-Detection & Section Structure Support**:
+  - Auto-detects song part tags (e.g. `[Verse]`, `[Chorus]`, `[Bridge]`, `[Outro]`, `Verse:`, `Intro -`) from imported Plain Text (`.txt`) and LRC files.
+  - Preserves `songPart` metadata seamlessly across Smart Merge, Track Line Attributes, and exports.
+- **Dual Plain Text Export Options**:
+  - **Plain Text (with Song Parts)**: Exports cleanly formatted lyrics under bracketed section headers with double-spaced stanza breaks.
+  - **Plain Text (without Song Parts)**: Exports pure, clean lyrics text.
+- **LyricsFile YAML Export & Restored Format Suite**:
+  - Added **LyricsFile YAML (`.lyricsfile.yaml`)** with per-word confidence scoring, line-level `songPart`, and background vocal roles.
+  - Restored explicit **LRCLIB (`.lyricsfile`)**, **YAML (`.yaml`)**, and **YouTube JSON3** export options.
+- **Unified Background Vocal `<span ttm:role="x-bg">` Grouping (Apple TTML & TTML)**:
+  - Solved fragmented background vocal spans when vocal timestamps overlap with lead lyrics.
+  - Groups continuous background vocal phrases into a single, cohesive `<span ttm:role="x-bg">` block adhering to the **Apple Music TTML / W3C TTML Lyric Standard**.
 
 ### v0.1.1
 
