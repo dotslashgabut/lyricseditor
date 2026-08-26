@@ -828,21 +828,36 @@ html, body {
 .edit-input-wrapper {
     position: relative;
     width: 100%;
-    height: 120px;
+    height: 100px;
     background: var(--bg-dark);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 6px;
     overflow: hidden;
+    transition: border-color 0.2s;
 }
-.edit-input-backdrop, #edit-text-input {
+.edit-input-wrapper:focus-within {
+    border-color: var(--accent);
+}
+.edit-bg-wrapper:focus-within {
+    border-color: #8a60ff !important;
+}
+.btn-add-bg-channel {
+    transition: all 0.2s ease;
+}
+.btn-add-bg-channel:hover {
+    background: rgba(138, 96, 255, 0.15) !important;
+    border-color: rgba(138, 96, 255, 0.7) !important;
+    color: #c4b5fd !important;
+}
+.edit-input-backdrop, .edit-input-wrapper textarea {
     position: absolute;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    padding: 12px;
+    padding: 10px 12px;
     font-family: inherit;
-    font-size: 14px;
+    font-size: 13.5px;
     line-height: 1.5;
     white-space: pre-wrap;
     word-wrap: break-word;
@@ -854,16 +869,20 @@ html, body {
     scrollbar-width: thin; /* Firefox support */
     scrollbar-color: var(--border) transparent; /* Firefox support */
 }
-#edit-text-input {
+.edit-input-wrapper textarea {
     color: transparent;
     caret-color: var(--text-main);
     resize: none;
     outline: none;
     z-index: 2;
 }
-#edit-text-input::selection {
+.edit-input-wrapper textarea::selection {
     background: rgba(255, 107, 0, 0.4);
     color: var(--text-main); /* Make text visible when selected for drag */
+}
+.edit-bg-wrapper textarea::selection {
+    background: rgba(138, 96, 255, 0.4);
+    color: var(--text-main);
 }
 .edit-input-backdrop {
     color: var(--text-main);
@@ -872,20 +891,20 @@ html, body {
 }
 
 /* Custom thin scrollbar for edit modal */
-#edit-text-input::-webkit-scrollbar,
+.edit-input-wrapper textarea::-webkit-scrollbar,
 .edit-input-backdrop::-webkit-scrollbar {
     width: 4px;
 }
-#edit-text-input::-webkit-scrollbar-track,
+.edit-input-wrapper textarea::-webkit-scrollbar-track,
 .edit-input-backdrop::-webkit-scrollbar-track {
     background: transparent;
 }
-#edit-text-input::-webkit-scrollbar-thumb,
+.edit-input-wrapper textarea::-webkit-scrollbar-thumb,
 .edit-input-backdrop::-webkit-scrollbar-thumb {
     background: var(--border);
     border-radius: 2px;
 }
-#edit-text-input::-webkit-scrollbar-thumb:hover {
+.edit-input-wrapper textarea::-webkit-scrollbar-thumb:hover {
     background: #555;
 }
 .edit-drop-cursor {
