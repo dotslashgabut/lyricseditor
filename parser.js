@@ -141,58 +141,127 @@ function parseLRC(content) {
   let currentSongPart = null;
 
   lines.forEach((line, li) => {
+    let ts = '';
+    let raw = line;
+    let tms = [];
+
     const m = line.match(re);
-    if (!m) {
+    if (m) {
+      ts = m[1];
+      raw = m[2];
+      const tre = /\[(\d{1,3}:\d{2}(?:\.\d{2,3})?)\]/g;
+      let tm;
+      while ((tm = tre.exec(ts))) tms.push(timeToMs(tm[1]));
+    } else if (line.includes('<') && line.includes('>')) {
+      // Inline timestamped line (e.g. [bg:<01:56.442>...] [01:57.845]v1:...)
+      const lineTsMatches = [...line.matchAll(/\[(\d{1,3}:\d{2}(?:\.\d{2,3})?)\]/g)];
+      if (lineTsMatches.length > 0) {
+        tms = lineTsMatches.map(tm => timeToMs(tm[1]));
+      } else {
+        const firstW = line.match(/<(\d{1,3}:\d{2}(?:\.\d{2,3})?)>/);
+        if (firstW) tms.push(timeToMs(firstW[1]));
+      }
+      raw = line;
+    } else {
       const detectedPart = detectSongPartHeader(line);
       if (detectedPart) {
         currentSongPart = detectedPart;
       }
       return;
     }
-    const ts = m[1];
-    let raw = m[2];
 
     // Check if raw line starts with [Verse] or [Chorus]
     let linePart = currentSongPart;
     const partMatch = raw.match(/^\s*\[([a-zA-Z0-9\s\-_:,'\.\(\)]+)\]\s*(.*)$/);
     if (partMatch) {
       const tagInside = partMatch[1].trim();
-      if (!/^\d{1,3}:\d{2}/.test(tagInside) && !/^(ti|ar|al|by|au|la|offset|re|length):/i.test(tagInside)) {
+      if (!/^\d{1,3}:\d{2}/.test(tagInside) && !/^(ti|ar|al|by|au|la|offset|re|length):/i.test(tagInside) && !/^(v\d+|bg|ch):?$/i.test(tagInside)) {
         currentSongPart = tagInside;
         linePart = currentSongPart;
         raw = partMatch[2];
       }
     }
 
-    const tms = []; let tm;
-    const tre = /\[(\d{1,3}:\d{2}(?:\.\d{2,3})?)\]/g;
-    while ((tm = tre.exec(ts))) tms.push(timeToMs(tm[1]));
+    let lineAgent = null;
+    let lineIsBg = false;
+
+    // Detect line-level agent / bg prefix
+    const lineAgentMatch = raw.match(/^\s*\[?(v\d+|bg|ch):?\]?\s*(.*)$/i);
+    if (lineAgentMatch && !raw.includes('<')) {
+      const tag = lineAgentMatch[1].toLowerCase();
+      if (tag === 'bg') lineIsBg = true;
+      else lineAgent = tag;
+      raw = lineAgentMatch[2];
+    }
+
     let words = [];
     if (raw.includes('<') && raw.includes('>')) {
       const wre = /<(\d{1,3}:\d{2}(?:\.\d{2,3})?)>/g;
       const wordMatches = [...raw.matchAll(wre)];
       
-      // Handle text before the first tag
+      let activeIsBg = lineIsBg;
+      let activeAgent = lineAgent || 'v1';
+
+      // Check text before first tag
       if (wordMatches.length > 0 && wordMatches[0].index > 0) {
         const preText = raw.substring(0, wordMatches[0].index).trim();
-        if (preText) {
-          words.push({ id: wid++, text: preText, startMs: tms[0] || 0, endMs: timeToMs(wordMatches[0][1]) });
+        if (/\[?\s*bg:?/i.test(preText) || preText.startsWith('(')) {
+          activeIsBg = true;
+        } else if (/\[?\s*v(\d+):?/i.test(preText)) {
+          const vm = preText.match(/v(\d+)/i);
+          if (vm) activeAgent = 'v' + vm[1];
+          activeIsBg = false;
+        } else if (/\[?\s*ch:?/i.test(preText)) {
+          activeAgent = 'ch';
+          activeIsBg = false;
         }
       }
 
-      wordMatches.forEach((m, i) => {
-        const startMs = timeToMs(m[1]);
-        const startIdx = m.index + m[0].length;
+      wordMatches.forEach((wm, i) => {
+        const startMs = timeToMs(wm[1]);
+        const startIdx = wm.index + wm[0].length;
         const endIdx = (i < wordMatches.length - 1) ? wordMatches[i+1].index : raw.length;
-        const wordText = raw.substring(startIdx, endIdx); // Don't trim yet to preserve spaces
-        
-        if (wordText !== "") {
+        const wordRaw = raw.substring(startIdx, endIdx);
+
+        // Clean word text by stripping tags like [bg:, v1:, ch:, ], (, ) and line timestamps [01:57.845]
+        let wordText = wordRaw
+          .replace(/\[\d{1,3}:\d{2}(?:\.\d{2,3})?\]/g, '')
+          .replace(/\[?(v\d+|bg|ch):?/gi, '')
+          .replace(/[\[\]\(\)]/g, '')
+          .trim();
+
+        if (wordText === "") {
+          // Trailing timestamp marker (e.g. <02:00.057>] or <02:00.057>)
+          if (words.length > 0 && words[words.length - 1].endMs <= words[words.length - 1].startMs) {
+            words[words.length - 1].endMs = startMs;
+          }
+        } else {
           words.push({
             id: wid++,
-            text: wordText, // Keep spaces to maintain LRC structure
+            text: wordText,
             startMs: startMs,
-            endMs: 0
+            endMs: 0,
+            isBackground: activeIsBg,
+            role: activeIsBg ? 'x-bg' : null,
+            agent: activeIsBg ? null : activeAgent
           });
+        }
+
+        // Update active state based on trailing tags in wordRaw for subsequent words
+        if (/\[?\s*bg:?/i.test(wordRaw) || wordRaw.includes('(')) {
+          activeIsBg = true;
+        }
+        if (/\[?\s*v(\d+):?/i.test(wordRaw)) {
+          const vm = wordRaw.match(/v(\d+)/i);
+          if (vm) activeAgent = 'v' + vm[1];
+          activeIsBg = false;
+        }
+        if (/\[?\s*ch:?/i.test(wordRaw)) {
+          activeAgent = 'ch';
+          activeIsBg = false;
+        }
+        if ((wordRaw.includes(']') || wordRaw.includes(')')) && !/\[?\s*bg:?/i.test(wordRaw)) {
+          activeIsBg = false;
         }
       });
       
@@ -200,51 +269,62 @@ function parseLRC(content) {
         for (let i = 0; i < words.length - 1; i++) {
           if (words[i].endMs <= words[i].startMs) words[i].endMs = words[i+1].startMs;
         }
-
-        // Clean standalone parentheses and assign isBackground
-        let inParen = false;
-        const cleanedWords = [];
-        for (let i = 0; i < words.length; i++) {
-          const w = words[i];
-          const trimmed = (w.text || "").trim();
-          if (trimmed === '(') {
-            inParen = true;
-            if (i < words.length - 1 && words[i+1].startMs > w.startMs) {
-              words[i+1].startMs = w.startMs;
-            }
-            continue;
-          }
-          if (trimmed === ')') {
-            inParen = false;
-            if (cleanedWords.length > 0) {
-              cleanedWords[cleanedWords.length - 1].endMs = Math.max(cleanedWords[cleanedWords.length - 1].endMs, w.startMs);
-            }
-            continue;
-          }
-          if (trimmed.startsWith('(')) inParen = true;
-          if (inParen) {
-            w.isBackground = true;
-            w.role = 'x-bg';
-          }
-          if (trimmed.endsWith(')')) inParen = false;
-          cleanedWords.push(w);
-        }
-        words = cleanedWords;
       }
     }
     
     // Clean up line text for display: remove tags and collapse extra spaces
-    let cleanText = raw.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-    const isBgLine = cleanText.startsWith('(') && cleanText.endsWith(')');
+    let cleanText = raw.replace(/<[^>]+>/g, '')
+      .replace(/\[\d{1,3}:\d{2}(?:\.\d{2,3})?\]/g, '')
+      .replace(/\[?(v\d+|bg|ch):?/gi, '')
+      .replace(/[\[\]]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const isBgLine = lineIsBg || (cleanText.startsWith('(') && cleanText.endsWith(')'));
+
+    if (words && words.length > 0) {
+      const allWordsBg = isBgLine || words.every(w => w.isBackground || w.role === 'x-bg');
+      if (allWordsBg) {
+        words.forEach(w => { w.isBackground = true; w.role = 'x-bg'; });
+      } else {
+        const mainW = words.filter(w => !w.isBackground && w.role !== 'x-bg').sort((a, b) => a.startMs - b.startMs);
+        const bgW = words.filter(w => w.isBackground || w.role === 'x-bg').sort((a, b) => a.startMs - b.startMs);
+        if (mainW.length > 0 && bgW.length > 0) {
+          const { startBg, endBg } = partitionBgWords(bgW, mainW);
+          words = [...startBg, ...mainW, ...endBg];
+        }
+      }
+      cleanText = formatLineDisplayText(words, isBgLine);
+      if (!lineAgent) {
+        const firstMain = words.find(w => !w.isBackground && w.agent);
+        if (firstMain) lineAgent = firstMain.agent;
+      }
+    } else if (isBgLine && !cleanText.startsWith('(')) {
+      cleanText = ensureParentheses(cleanText);
+    }
 
     tms.forEach(start => {
+      let cueStart = start;
+      let cueEnd = start + 3000;
+      if (words && words.length > 0) {
+        const allStarts = words.map(w => w.startMs);
+        const allEnds = words.map(w => w.endMs);
+        if (allStarts.length) cueStart = Math.min(cueStart, ...allStarts);
+        if (allEnds.length) {
+          const maxEnd = Math.max(...allEnds);
+          if (maxEnd > cueStart) cueEnd = maxEnd;
+        }
+      }
+
       cues.push({ 
         id: id++, 
-        startMs: start, 
-        endMs: start + 3000, 
+        startMs: cueStart, 
+        endMs: cueEnd, 
         text: cleanText, 
         words: words.length ? words.map(w => ({...w, ...(isBgLine ? { isBackground: true, role: 'x-bg' } : {}) })) : null,
-        ...(isBgLine ? { isBackground: true, role: 'x-bg' } : {}),
+        isBackground: isBgLine,
+        role: isBgLine ? 'x-bg' : null,
+        agent: lineAgent || null,
         ...(linePart ? { songPart: linePart } : {})
       });
     });
@@ -411,12 +491,8 @@ function parseJSON_(content) {
       });
     }
     const arr = Array.isArray(p) ? p : (p.cues||[]);
-    return arr.map((c,i) => ({ 
-      id: i+1, 
-      startMs: Math.round(c.start !== undefined ? c.start : (c.startMs || 0)), 
-      endMs: Math.round(c.end !== undefined ? c.end : (c.endMs || 0)), 
-      text: c.text||'', 
-      words: c.words ? c.words.map((w, idx) => ({
+    return arr.map((c,i) => {
+      let words = c.words ? c.words.map((w, idx) => ({
         id: w.id || idx + 1,
         text: w.text || '',
         startMs: Math.round(w.startMs !== undefined ? w.startMs : (w.start || 0)),
@@ -425,13 +501,139 @@ function parseJSON_(content) {
         isBackground: !!(w.isBackground || w.role === 'x-bg'),
         role: w.role || (w.isBackground ? 'x-bg' : null),
         agent: w.agent || null
-      })) : null,
-      isBackground: !!(c.isBackground || c.role === 'x-bg'),
-      role: c.role || (c.isBackground ? 'x-bg' : null),
-      agent: c.agent || null,
-      songPart: c.songPart || null
-    }));
+      })) : null;
+
+      const isCueBg = !!(c.isBackground || c.role === 'x-bg');
+
+      if (words && words.length > 0) {
+        const pIsBgLine = isCueBg || words.every(w => w.isBackground || w.role === 'x-bg');
+        if (pIsBgLine) {
+          words.sort((a, b) => a.startMs - b.startMs);
+          words.forEach(w => { w.isBackground = true; w.role = 'x-bg'; });
+        } else {
+          const mainW = words.filter(w => !w.isBackground && w.role !== 'x-bg').sort((a, b) => a.startMs - b.startMs);
+          const bgW = words.filter(w => w.isBackground || w.role === 'x-bg').sort((a, b) => a.startMs - b.startMs);
+          if (mainW.length === 0) {
+            words = bgW;
+          } else if (bgW.length === 0) {
+            words = mainW;
+          } else {
+            const { startBg, endBg } = partitionBgWords(bgW, mainW);
+            words = [...startBg, ...mainW, ...endBg];
+          }
+        }
+      }
+
+      let text = c.text || '';
+      if (words && words.length > 0) {
+        text = formatLineDisplayText(words, isCueBg);
+      } else if (!text && isCueBg) {
+        text = '()';
+      }
+
+      return { 
+        id: i+1, 
+        startMs: Math.round(c.start !== undefined ? c.start : (c.startMs || 0)), 
+        endMs: Math.round(c.end !== undefined ? c.end : (c.endMs || 0)), 
+        text: text, 
+        words: words && words.length ? words : null,
+        isBackground: isCueBg,
+        role: c.role || (isCueBg ? 'x-bg' : null),
+        agent: c.agent || null,
+        songPart: c.songPart || null
+      };
+    });
   } catch(e) { return []; }
+}
+
+function ensureParentheses(text) {
+  if (!text) return '';
+  let t = text.trim();
+  if (!t) return '';
+  if (!t.startsWith('(')) t = '(' + t;
+  if (!t.endsWith(')')) t = t + ')';
+  return t;
+}
+
+function formatLineDisplayText(words, isLineBg) {
+  if (!words || words.length === 0) return '';
+  const validWords = words.filter(w => (w.text !== undefined && w.text !== null && w.text !== "" && w.text !== "\\"));
+  if (validWords.length === 0) return '';
+
+  const allBg = isLineBg || (validWords.length > 0 && validWords.every(w => w.isBackground || w.role === 'x-bg'));
+  if (allBg) {
+    const raw = validWords.map(w => w.text.trim().replace(/^\(/, '').replace(/\)$/, '')).filter(Boolean).join(' ');
+    return ensureParentheses(raw);
+  }
+
+  const allMain = !isLineBg && validWords.every(w => !w.isBackground && w.role !== 'x-bg');
+  if (allMain) {
+    return validWords.map(w => w.text.trim()).filter(Boolean).join(' ');
+  }
+
+  // Mixed line: group into contiguous runs of bg and main words
+  const runs = [];
+  let currentRun = null;
+
+  for (let i = 0; i < validWords.length; i++) {
+    const w = validWords[i];
+    const isBg = !!(w.isBackground || w.role === 'x-bg');
+    if (!currentRun || currentRun.isBg !== isBg) {
+      currentRun = { isBg: isBg, words: [] };
+      runs.push(currentRun);
+    }
+    currentRun.words.push(w);
+  }
+
+  const runTexts = runs.map(run => {
+    if (run.isBg) {
+      const text = run.words.map(w => w.text.trim().replace(/^\(/, '').replace(/\)$/, '')).filter(Boolean).join(' ');
+      return ensureParentheses(text);
+    } else {
+      return run.words.map(w => w.text.trim()).filter(Boolean).join(' ');
+    }
+  });
+
+  return runTexts.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+function partitionBgWords(bgWords, mainWords) {
+  if (!bgWords || bgWords.length === 0) return { startBg: [], endBg: [] };
+  if (!mainWords || mainWords.length === 0) return { startBg: bgWords, endBg: [] };
+
+  const firstMain = mainWords[0];
+  const lastMain = mainWords[mainWords.length - 1];
+  const effectiveMainEnd = (lastMain.endMs && lastMain.endMs > lastMain.startMs) ? lastMain.endMs : lastMain.startMs + 1000;
+  const mainMid = (firstMain.startMs + effectiveMainEnd) / 2;
+
+  // Check if all bgWords have tokenIdx
+  const hasTokenIndices = bgWords.every(w => w.tokenIdx !== undefined) && firstMain.tokenIdx !== undefined && lastMain.tokenIdx !== undefined;
+
+  if (hasTokenIndices) {
+    const startBg = bgWords.filter(w => w.tokenIdx < firstMain.tokenIdx);
+    const endBg = bgWords.filter(w => w.tokenIdx > lastMain.tokenIdx);
+    const midBg = bgWords.filter(w => w.tokenIdx >= firstMain.tokenIdx && w.tokenIdx <= lastMain.tokenIdx);
+    midBg.forEach(w => {
+      const wMid = (w.startMs + (w.endMs && w.endMs > w.startMs ? w.endMs : w.startMs + 500)) / 2;
+      if (wMid <= mainMid) startBg.push(w);
+      else endBg.push(w);
+    });
+    return { startBg, endBg };
+  }
+
+  const startBg = [];
+  const endBg = [];
+
+  bgWords.forEach(w => {
+    const wMid = (w.startMs + (w.endMs && w.endMs > w.startMs ? w.endMs : w.startMs + 500)) / 2;
+    if (w.startMs < firstMain.startMs || (wMid <= mainMid && w.startMs <= lastMain.startMs)) {
+      startBg.push(w);
+    } else {
+      endBg.push(w);
+    }
+  });
+
+  return { startBg, endBg };
 }
 
 function getRole(el){ if(!el || !el.getAttribute) return ''; return el.getAttribute('ttm:role') || el.getAttributeNS('http://www.w3.org/ns/ttml#metadata','role') || el.getAttribute('role') || ''; }
@@ -576,8 +778,6 @@ function fillGapsWithGhostWords(cues) {
     const pIsBg = !!(c.isBackground || c.role === 'x-bg');
     const pAgent = c.agent || null;
 
-    c.words.sort((a, b) => a.startMs - b.startMs);
-
     const hasBg = c.words.some(w => w.isBackground || w.role === 'x-bg');
 
     // If the line contains background vocals, do NOT add ghost words for main or bg channels,
@@ -589,6 +789,8 @@ function fillGapsWithGhostWords(cues) {
       });
       return;
     }
+
+    c.words.sort((a, b) => a.startMs - b.startMs);
 
     function fillChannelGaps(chWords, isBg) {
       if (chWords.length === 0) return [];
@@ -818,23 +1020,40 @@ function parseTTML(content) {
       traverse(child, pIsBg, pAgent);
     }
 
-    if (words.length > 0) {
-      const first = words[0];
-      const last = words[words.length - 1];
-      if (!beginAttr && first.startMs) startMs = first.startMs;
-      if (!endAttr && !durAttr && last.endMs) endMs = last.endMs;
+    let pWords = words;
+    if (pWords.length > 0) {
+      const pIsBgLine = pIsBg || pWords.every(w => w.isBackground || w.role === 'x-bg');
+      if (pIsBgLine) {
+        pWords.sort((a, b) => a.startMs - b.startMs);
+        pWords.forEach(w => { w.isBackground = true; w.role = 'x-bg'; });
+      } else {
+        const mainW = pWords.filter(w => !w.isBackground && w.role !== 'x-bg').sort((a, b) => a.startMs - b.startMs);
+        const bgW = pWords.filter(w => w.isBackground || w.role === 'x-bg').sort((a, b) => a.startMs - b.startMs);
+        if (mainW.length === 0) {
+          pWords = bgW;
+        } else if (bgW.length === 0) {
+          pWords = mainW;
+        } else {
+          const { startBg, endBg } = partitionBgWords(bgW, mainW);
+          pWords = [...startBg, ...mainW, ...endBg];
+        }
+      }
+    }
+
+    if (pWords.length > 0) {
+      const allStarts = pWords.map(w => w.startMs);
+      const allEnds = pWords.map(w => w.endMs);
+      if (!beginAttr && allStarts.length) startMs = Math.min(...allStarts);
+      if (!endAttr && !durAttr && allEnds.length) endMs = Math.max(...allEnds);
     }
     if (endMs <= startMs) endMs = startMs + 2000;
 
-    if (words.length > 0) {
-      words.sort((a, b) => a.startMs - b.startMs);
-    }
-
     let text = '';
-    if (words.length > 0) {
-      text = words.map(w => w.text).filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+    if (pWords.length > 0) {
+      text = formatLineDisplayText(pWords, pIsBg);
     } else {
       text = (p.textContent || '').replace(/\s+/g, ' ').trim();
+      if (pIsBg && text && !text.startsWith('(')) text = ensureParentheses(text);
     }
 
     cues.push({
@@ -842,7 +1061,7 @@ function parseTTML(content) {
       startMs,
       endMs,
       text,
-      words: words.length ? words : null,
+      words: pWords.length ? pWords : null,
       role: pRole || null,
       agent: pAgent || null,
       isBackground: pIsBg,
@@ -1286,7 +1505,16 @@ function stringifyTTML(cues, karaoke, durationMs, options = {}) {
 
       function renderBgGroup(words) {
         if (!words || words.length === 0) return '';
-        const inner = words.map(w => renderWordSpan(w, '          ')).join('\n');
+        const inner = words.map((w, idx) => {
+          let text = (w.text || "").trim();
+          if (idx === 0 && !text.startsWith('(')) text = '(' + text;
+          if (idx === words.length - 1 && !text.endsWith(')')) text = text + ')';
+          const ws = w.startMs !== undefined ? w.startMs : cue.startMs;
+          const we = w.endMs !== undefined ? w.endMs : cue.endMs;
+          let extra = '';
+          if (w.agent && w.agent !== cue.agent) extra += ` ttm:agent="${w.agent}"`;
+          return `          <span begin="${msToTTMLTime(ws)}" end="${msToTTMLTime(we)}"${extra}>${escapeXML(text)}</span>`;
+        }).join('\n');
         return `        <span ttm:role="x-bg">\n${inner}\n        </span>`;
       }
 
@@ -1297,22 +1525,7 @@ function stringifyTTML(cues, karaoke, durationMs, options = {}) {
       } else if (bgWords.length === 0) {
         mainWords.forEach(w => innerSpans.push(renderWordSpan(w)));
       } else {
-        let startBg = [];
-        let endBg = [];
-        const firstMain = mainWords[0];
-        const lastMain = mainWords[mainWords.length - 1];
-
-        bgWords.forEach(w => {
-          if (w.tokenIdx !== undefined && firstMain.tokenIdx !== undefined && lastMain.tokenIdx !== undefined) {
-            if (w.tokenIdx < firstMain.tokenIdx) startBg.push(w);
-            else endBg.push(w);
-          } else {
-            const mid = (w.startMs + w.endMs) / 2;
-            const mainMid = (firstMain.startMs + lastMain.endMs) / 2;
-            if (mid <= mainMid) startBg.push(w);
-            else endBg.push(w);
-          }
-        });
+        const { startBg, endBg } = partitionBgWords(bgWords, mainWords);
 
         if (startBg.length > 0) innerSpans.push(renderBgGroup(startBg));
         mainWords.forEach(w => innerSpans.push(renderWordSpan(w)));
@@ -1416,7 +1629,16 @@ function stringifyAppleTTML(cues, karaoke, durationMs, options = {}) {
 
         function renderBgGroup(words) {
           if (!words || words.length === 0) return '';
-          const inner = words.map(w => renderWordSpan(w, '          ')).join('\n');
+          const inner = words.map((w, idx) => {
+            let text = (w.text || "").trim();
+            if (idx === 0 && !text.startsWith('(')) text = '(' + text;
+            if (idx === words.length - 1 && !text.endsWith(')')) text = text + ')';
+            const ws = w.startMs !== undefined ? w.startMs : cue.startMs;
+            const we = w.endMs !== undefined ? w.endMs : cue.endMs;
+            let extra = '';
+            if (w.agent && w.agent !== cue.agent) extra += ` ttm:agent="${w.agent}"`;
+            return `          <span begin="${msToTTMLTime(ws)}" end="${msToTTMLTime(we)}"${extra}>${escapeXML(text)}</span>`;
+          }).join('\n');
           return `        <span ttm:role="x-bg">\n${inner}\n        </span>`;
         }
 
@@ -1427,22 +1649,7 @@ function stringifyAppleTTML(cues, karaoke, durationMs, options = {}) {
         } else if (bgWords.length === 0) {
           mainWords.forEach(w => innerSpans.push(renderWordSpan(w)));
         } else {
-          let startBg = [];
-          let endBg = [];
-          const firstMain = mainWords[0];
-          const lastMain = mainWords[mainWords.length - 1];
-
-          bgWords.forEach(w => {
-            if (w.tokenIdx !== undefined && firstMain.tokenIdx !== undefined && lastMain.tokenIdx !== undefined) {
-              if (w.tokenIdx < firstMain.tokenIdx) startBg.push(w);
-              else endBg.push(w);
-            } else {
-              const mid = (w.startMs + w.endMs) / 2;
-              const mainMid = (firstMain.startMs + lastMain.endMs) / 2;
-              if (mid <= mainMid) startBg.push(w);
-              else endBg.push(w);
-            }
-          });
+          const { startBg, endBg } = partitionBgWords(bgWords, mainWords);
 
           if (startBg.length > 0) innerSpans.push(renderBgGroup(startBg));
           mainWords.forEach(w => innerSpans.push(renderWordSpan(w)));
@@ -1618,19 +1825,37 @@ function stringifyLRC(cues, enhanced, durationMs, options = {}) {
     const c = cues[i];
     let line = `[${msToLrc(c.startMs)}]`;
     if (enhanced && c.words && c.words.length > 0) {
-      const hasVisibleText = c.words.some(w => (w.text || "").trim().length > 0);
-      if (hasVisibleText) {
-        line += " " + c.words.map(w => {
-          const prefix = w.isBackground ? '(' : '';
-          const suffix = w.isBackground ? ')' : '';
-          return `<${msToLrc(w.startMs)}>${prefix}${w.text}${suffix}`;
-        }).join(' ');
+      const validWords = c.words.filter(w => (w.text || "").trim().length > 0 && w.text !== "\\");
+      if (validWords.length > 0) {
+        const runs = [];
+        let curRun = null;
+        for (let w of validWords) {
+          const isBg = !!(w.isBackground || w.role === 'x-bg');
+          if (!curRun || curRun.isBg !== isBg) {
+            curRun = { isBg, words: [] };
+            runs.push(curRun);
+          }
+          curRun.words.push(w);
+        }
+
+        const runStrs = runs.map(run => {
+          if (run.isBg) {
+            const inner = run.words.map(w => {
+              const clean = (w.text || "").replace(/^\(/, '').replace(/\)$/, '');
+              return `<${msToLrc(w.startMs)}>${clean}`;
+            }).join(' ');
+            return `(${inner})`;
+          } else {
+            return run.words.map(w => `<${msToLrc(w.startMs)}>${w.text}`).join(' ');
+          }
+        });
+        line += " " + runStrs.join(' ');
       } else if (c.text && c.text.trim()) {
         line += " " + c.text;
       }
     } else if (c.text && c.text.trim()) {
       let txt = c.text;
-      if (c.isBackground) txt = `(${txt})`;
+      if (c.isBackground && !txt.startsWith('(')) txt = ensureParentheses(txt);
       line += " " + txt;
     }
     output.push(line);
@@ -1638,6 +1863,95 @@ function stringifyLRC(cues, enhanced, durationMs, options = {}) {
     // Add a blank line to clear the screen if there's a gap to the next cue or at the end
     const nextStart = (i < cues.length - 1) ? cues[i + 1].startMs : (durationMs || (c.endMs + 1000));
     if (autoEmpty && c.endMs < nextStart - 10) { // Small threshold to avoid redundant clears
+      output.push(`[${msToLrc(c.endMs)}]`);
+    }
+  }
+  return output.join('\n');
+}
+
+function stringifyLRCTesting(cues, enhanced, durationMs, options = {}) {
+  const autoEmpty = options.autoEmptyLines !== false;
+  const metadata = options.metadata || {};
+  let output = [];
+  if (metadata.title) output.push(`[ti:${metadata.title}]`);
+  if (metadata.artist) output.push(`[ar:${metadata.artist}]`);
+  if (metadata.album) output.push(`[al:${metadata.album}]`);
+  if (metadata.author || metadata.by) output.push(`[by:${metadata.author || metadata.by}]`);
+  if (metadata.lyricist) output.push(`[au:${metadata.lyricist}]`);
+  if (metadata.language) output.push(`[la:${metadata.language}]`);
+  if (metadata.offset) output.push(`[offset:${metadata.offset}]`);
+  if (metadata.copyright) output.push(`[re:${metadata.copyright}]`);
+  if (durationMs) {
+    const totalSecs = Math.round(durationMs / 1000);
+    const m = Math.floor(totalSecs / 60);
+    const s = totalSecs % 60;
+    output.push(`[length:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}]`);
+  }
+
+  for (let i = 0; i < cues.length; i++) {
+    const c = cues[i];
+    let line = `[${msToLrc(c.startMs)}]`;
+    const defaultAgent = (c.agent && c.agent.trim()) ? c.agent.trim() : 'v1';
+
+    if (enhanced && c.words && c.words.length > 0) {
+      const validWords = c.words.filter(w => (w.text || "").trim().length > 0 && w.text !== "\\");
+      if (validWords.length > 0) {
+        const runs = [];
+        let curRun = null;
+        for (let w of validWords) {
+          const isBg = !!(w.isBackground || w.role === 'x-bg' || c.isBackground || c.role === 'x-bg');
+          const agent = (w.agent && w.agent.trim()) ? w.agent.trim() : defaultAgent;
+          const key = isBg ? 'bg' : agent;
+          if (!curRun || curRun.key !== key) {
+            curRun = { isBg, agent, key, words: [] };
+            runs.push(curRun);
+          }
+          curRun.words.push(w);
+        }
+
+        const runStrs = runs.map(run => {
+          if (run.isBg) {
+            const inner = run.words.map(w => {
+              const clean = (w.text || "").replace(/^\[?bg(?::|\])\s*/i, '').replace(/^\(/, '').replace(/\)$/, '').replace(/[\[\]]/g, '').trim();
+              return `<${msToLrc(w.startMs)}>${clean}`;
+            }).filter(Boolean).join(' ');
+            const lastWord = run.words[run.words.length - 1];
+            const endTag = (lastWord && lastWord.endMs && lastWord.endMs > lastWord.startMs) ? ` <${msToLrc(lastWord.endMs)}>` : '';
+            return `[bg:${inner}${endTag}]`;
+          } else {
+            const inner = run.words.map(w => {
+              const clean = (w.text || "").replace(/^\[?(v\d+|ch)(?::|\])\s*/i, '').replace(/[\[\]]/g, '').trim();
+              return `<${msToLrc(w.startMs)}>${clean}`;
+            }).filter(Boolean).join(' ');
+            const lastWord = run.words[run.words.length - 1];
+            const endTag = (lastWord && lastWord.endMs && lastWord.endMs > lastWord.startMs) ? ` <${msToLrc(lastWord.endMs)}>` : '';
+            return `${run.agent}:${inner}${endTag}`;
+          }
+        });
+        line += " " + runStrs.join(' ');
+      } else if (c.text && c.text.trim()) {
+        const isBg = !!(c.isBackground || c.role === 'x-bg');
+        if (isBg) {
+          const clean = c.text.replace(/^\(/, '').replace(/\)$/, '').trim();
+          line += ` [bg:${clean}]`;
+        } else {
+          line += ` ${defaultAgent}:${c.text.trim()}`;
+        }
+      }
+    } else if (c.text && c.text.trim()) {
+      const isBg = !!(c.isBackground || c.role === 'x-bg');
+      if (isBg) {
+        const clean = c.text.replace(/^\(/, '').replace(/\)$/, '').trim();
+        line += ` [bg:${clean}]`;
+      } else {
+        line += ` ${defaultAgent}:${c.text.trim()}`;
+      }
+    }
+    output.push(line);
+
+    // Add a blank line to clear the screen if there's a gap to the next cue or at the end
+    const nextStart = (i < cues.length - 1) ? cues[i + 1].startMs : (durationMs || (c.endMs + 1000));
+    if (autoEmpty && c.endMs < nextStart - 10) {
       output.push(`[${msToLrc(c.endMs)}]`);
     }
   }
@@ -1693,6 +2007,7 @@ function exportAs(cues, format, durationMs, options = {}) {
   switch(format) {
     case 'lrc': return stringifyLRC(exportCues, false, durationMs, {autoEmptyLines: options.autoEmptyLines, metadata});
     case 'lrc_enhanced': return stringifyLRC(exportCues, true, durationMs, {autoEmptyLines: options.autoEmptyLines, metadata});
+    case 'lrc_enhanced_testing': return stringifyLRCTesting(exportCues, true, durationMs, {autoEmptyLines: options.autoEmptyLines, metadata});
     case 'srt': return stringifySRT(exportCues, {metadata});
     case 'vtt': return stringifyVTT(exportCues, false, {metadata, durationMs});
     case 'vtt_karaoke': return stringifyVTT(exportCues, true, {metadata, durationMs});
