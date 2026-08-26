@@ -73,7 +73,7 @@ https://github.com/user-attachments/assets/d695af6c-2de2-4083-954b-ee181cbc72d0
 ## 📥 Supported Formats
 
 ### Import
-- LRC (Standard & Enhanced with Background Vocals & Song Parts)
+- LRC (Standard & Enhanced with Vocal Agent Tags `v1:`, `v2:`, `v3:`, `ch:`, `bg:`, Background Vocals & Song Parts)
 - SRT (SubRip)
 - VTT (WebVTT)
 - TTML (Timed Text Markup Language / Apple iTunes / Apple Music)
@@ -86,7 +86,7 @@ https://github.com/user-attachments/assets/d695af6c-2de2-4083-954b-ee181cbc72d0
 
 ### Export
 - **Subtitles**: LRC, SRT, VTT, TTML, Apple TTML (iTunes), Audacity Labels
-- **Karaoke (Word-Level)**: Enhanced LRC, VTT (Words), TTML (Words), Apple TTML (Words), LRCLIB / LyricsFile (`.lyricsfile.yaml`), YouTube SRV3 (Words), Audacity Labels (Words)
+- **Karaoke (Word-Level)**: Enhanced LRC, Enhanced LRC (Testing), VTT (Words), TTML (Words), Apple TTML (Words), LRCLIB / LyricsFile (`.lyricsfile.yaml`), YouTube SRV3 (Words), Audacity Labels (Words)
 - **Other**: YouTube SRV1/SRV2/SRV3, JSON (Bidirectional with Confidence), YouTube JSON3, Audacity Labels, LRCLIB (`.lyricsfile`), YAML (`.yaml`), Plain Text (with Song Parts), Plain Text (without Song Parts)
 
 ## 🎵 Audio Precision & Sync
@@ -160,6 +160,17 @@ These advanced tools are designed to fix one of the most common issues in lyric 
 
 ### v0.1.2
 
+- **Enhanced LRC (Testing) Support ([rmpc Issue #620](https://github.com/mierak/rmpc/issues/620))**:
+  - Implemented full import and export support for Enhanced LRC with vocal agent tags (`v1:`, `v2:`, `v3:`, `ch:`, etc.) and background vocal tags (`[bg: ...]`, `bg:`).
+  - Added dedicated **Enhanced LRC (Testing)** (`lrc_enhanced_testing`) export option in the Karaoke (Word-Level) dropdown.
+  - Generates trailing `<end_time>` tags for precise word end timings expected by `rmpc` and modern karaoke players (e.g. `v1:<00:06.118>word <00:08.330>`).
+  - Supports simultaneous mixed lead and background vocals on the same line (e.g. `[bg:<time>...] v1:<time>... [bg:<time>...]`).
+  - Universal `parseLRC` import parser that automatically detects agent prefixes and background vocal tags while stripping markup for clean display in the editor.
+- **Background Vocal Multi-Channel Engine & Display Scrambling Fix**:
+  - Resolved word display scrambling in the editor, TTML, JSON, and lyricsfile formats caused by overlapping background vocal and lead vocal timestamps.
+  - Run-based text formatter (`formatLineDisplayText`) and channel partitioner (`partitionBgWords`) accurately organize words by channel (`[...startBg, ...mainWords, ...endBg]`).
+  - Edit Lyric Line modal (`separateLineWordsForEdit`) cleanly isolates `startBg` and `endBg` fields without dumping background vocal words into the lead vocal textarea.
+  - Per-channel independent word overlap resolution (`resolveTimingOverlaps`).
 - **Multi-Channel Edit Line Text Modal**:
   - Redesigned the Edit Lyric Line popup modal with dedicated input channels: **Start Background Vocal (Intro)**, **Lead Vocal (Main Lyrics)**, and **End Background Vocal (Outro / Ad-lib)**.
   - Channel-isolated timing alignment engine (`alignChannel`) ensures background vocals and main lyrics do not collide or corrupt word timestamps during editing, blank insertions, or word restructuring.
@@ -180,6 +191,8 @@ These advanced tools are designed to fix one of the most common issues in lyric 
 - **Unified Background Vocal `<span ttm:role="x-bg">` Grouping (Apple TTML & TTML)**:
   - Solved fragmented background vocal spans when vocal timestamps overlap with lead lyrics.
   - Groups continuous background vocal phrases into a single, cohesive `<span ttm:role="x-bg">` block adhering to the **Apple Music TTML / W3C TTML Lyric Standard**.
+- **Session Reset Optimization**:
+  - Updated `clearDB()` to await IndexedDB transaction completion and explicitly close the database connection before reloading.
 
 ### v0.1.1
 

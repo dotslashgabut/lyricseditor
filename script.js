@@ -25,9 +25,13 @@ async function getFileFromDB(key) {
     } catch(e) { return null; }
 }
 async function clearDB() {
-    const db = await openDB();
-    const tx = db.transaction(DB_STORE, 'readwrite');
-    tx.objectStore(DB_STORE).clear();
+    try {
+        const db = await openDB();
+        const tx = db.transaction(DB_STORE, 'readwrite');
+        tx.objectStore(DB_STORE).clear();
+        await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; });
+        db.close();
+    } catch(e) { console.error("DB Clear Failed", e); }
 }
 async function deleteFileFromDB(key) {
     try {
@@ -1582,7 +1586,7 @@ function performExport(f, isQuick = false) {
   // Only use autoEmpty if it's a manual export and the toggle is checked.
   // For Quick Export, we want it to match exactly what's in the editor.
   const autoEmpty = isQuick ? false : ($('toggle-auto-empty-lines') ? $('toggle-auto-empty-lines').checked : false);
-  const ext={lrc:'lrc',lrc_enhanced:'lrc',srt:'srt',vtt:'vtt',vtt_karaoke:'vtt',ttml:'ttml',ttml_karaoke:'ttml',apple_ttml:'ttml',apple_ttml_karaoke:'ttml',srv1:'srv1',srv2:'srv2',srv3:'srv3',srv3_karaoke:'srv3',json:'json',json3:'json',lyricsfile:'lyricsfile',lyricsfile_yaml:'lyricsfile.yaml',yaml:'yaml',txt:'txt',txt_parts:'txt',txt_plain:'txt',audacity:'txt',audacity_karaoke:'txt'}[targetFormat]||'txt';
+  const ext={lrc:'lrc',lrc_enhanced:'lrc',lrc_enhanced_testing:'lrc',srt:'srt',vtt:'vtt',vtt_karaoke:'vtt',ttml:'ttml',ttml_karaoke:'ttml',apple_ttml:'ttml',apple_ttml_karaoke:'ttml',srv1:'srv1',srv2:'srv2',srv3:'srv3',srv3_karaoke:'srv3',json:'json',json3:'json',lyricsfile:'lyricsfile',lyricsfile_yaml:'lyricsfile.yaml',yaml:'yaml',txt:'txt',txt_parts:'txt',txt_plain:'txt',audacity:'txt',audacity_karaoke:'txt'}[targetFormat]||'txt';
   
   let finalBaseName = originalFilename;
   if (audioFilename && lyricsFilename && audioFilename !== lyricsFilename) {
@@ -3625,41 +3629,83 @@ function ensureParentheses(text) {
 
 function formatLineDisplayText(words, isLineBg) {
   if (!words || words.length === 0) return '';
-  let formatted = [];
-  let inBgGroup = false;
+  const validWords = words.filter(w => (w.text !== undefined && w.text !== null && w.text !== "" && w.text !== "\\"));
+  if (validWords.length === 0) return '';
 
-  for (let i = 0; i < words.length; i++) {
-    const w = words[i];
-    const isBg = !!(w.isBackground || w.role === 'x-bg' || isLineBg);
-    let wText = (w.text !== undefined && w.text !== null && w.text !== "") ? w.text : "\\";
-    if (wText === '\\') continue;
+  const allBg = isLineBg || (validWords.length > 0 && validWords.every(w => w.isBackground || w.role === 'x-bg'));
+  if (allBg) {
+    const raw = validWords.map(w => w.text.trim().replace(/^\(/, '').replace(/\)$/, '')).filter(Boolean).join(' ');
+    return ensureParentheses(raw);
+  }
 
-    const hasOpen = wText.startsWith('(');
-    const hasClose = wText.endsWith(')');
+  const allMain = !isLineBg && validWords.every(w => !w.isBackground && w.role !== 'x-bg');
+  if (allMain) {
+    return validWords.map(w => w.text.trim()).filter(Boolean).join(' ');
+  }
 
-    if (isBg && !inBgGroup && !hasOpen) {
-      formatted.push('(' + wText);
-      inBgGroup = true;
-    } else if (!isBg && inBgGroup) {
-      if (formatted.length > 0 && !formatted[formatted.length - 1].endsWith(')')) {
-        formatted[formatted.length - 1] += ')';
-      }
-      inBgGroup = false;
-      formatted.push(wText);
+  // Mixed line: group into contiguous runs of bg and main words
+  const runs = [];
+  let currentRun = null;
+
+  for (let i = 0; i < validWords.length; i++) {
+    const w = validWords[i];
+    const isBg = !!(w.isBackground || w.role === 'x-bg');
+    if (!currentRun || currentRun.isBg !== isBg) {
+      currentRun = { isBg: isBg, words: [] };
+      runs.push(currentRun);
+    }
+    currentRun.words.push(w);
+  }
+
+  const runTexts = runs.map(run => {
+    if (run.isBg) {
+      const text = run.words.map(w => w.text.trim().replace(/^\(/, '').replace(/\)$/, '')).filter(Boolean).join(' ');
+      return ensureParentheses(text);
     } else {
-      formatted.push(wText);
+      return run.words.map(w => w.text.trim()).filter(Boolean).join(' ');
     }
+  });
 
-    if (hasClose && inBgGroup) {
-      inBgGroup = false;
-    }
+  return runTexts.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+function partitionBgWords(bgWords, mainWords) {
+  if (!bgWords || bgWords.length === 0) return { startBg: [], endBg: [] };
+  if (!mainWords || mainWords.length === 0) return { startBg: bgWords, endBg: [] };
+
+  const firstMain = mainWords[0];
+  const lastMain = mainWords[mainWords.length - 1];
+  const effectiveMainEnd = (lastMain.endMs && lastMain.endMs > lastMain.startMs) ? lastMain.endMs : lastMain.startMs + 1000;
+  const mainMid = (firstMain.startMs + effectiveMainEnd) / 2;
+
+  // Check if all bgWords have tokenIdx
+  const hasTokenIndices = bgWords.every(w => w.tokenIdx !== undefined) && firstMain.tokenIdx !== undefined && lastMain.tokenIdx !== undefined;
+
+  if (hasTokenIndices) {
+    const startBg = bgWords.filter(w => w.tokenIdx < firstMain.tokenIdx);
+    const endBg = bgWords.filter(w => w.tokenIdx > lastMain.tokenIdx);
+    const midBg = bgWords.filter(w => w.tokenIdx >= firstMain.tokenIdx && w.tokenIdx <= lastMain.tokenIdx);
+    midBg.forEach(w => {
+      const wMid = (w.startMs + (w.endMs && w.endMs > w.startMs ? w.endMs : w.startMs + 500)) / 2;
+      if (wMid <= mainMid) startBg.push(w);
+      else endBg.push(w);
+    });
+    return { startBg, endBg };
   }
 
-  if (inBgGroup && formatted.length > 0 && !formatted[formatted.length - 1].endsWith(')')) {
-    formatted[formatted.length - 1] += ')';
-  }
+  const startBg = [];
+  const endBg = [];
 
-  return formatted.join(' ').replace(/\s+/g, ' ').trim();
+  bgWords.forEach(w => {
+    const wMid = (w.startMs + (w.endMs && w.endMs > w.startMs ? w.endMs : w.startMs + 500)) / 2;
+    if (w.startMs < firstMain.startMs || (wMid <= mainMid && w.startMs <= lastMain.startMs)) {
+      startBg.push(w);
+    } else {
+      endBg.push(w);
+    }
+  });
+
+  return { startBg, endBg };
 }
 
 function separateLineWordsForEdit(line) {
@@ -3680,7 +3726,9 @@ function separateLineWordsForEdit(line) {
   }
 
   const isLineBg = !!(line.isBackground || line.role === 'x-bg');
-  const allBg = line.words.every(w => w.isBackground || w.role === 'x-bg');
+  const validWords = line.words.filter(w => (w.text !== undefined && w.text !== null && w.text !== "" && w.text !== "\\"));
+
+  const allBg = isLineBg || (validWords.length > 0 && validWords.every(w => w.isBackground || w.role === 'x-bg'));
 
   function formatWordList(arr) {
     return arr.map(w => {
@@ -3695,28 +3743,22 @@ function separateLineWordsForEdit(line) {
     return ensureParentheses(text);
   }
 
-  if (isLineBg || allBg) {
+  if (allBg) {
     return { startBg: '', main: ensureParentheses(formatWordList(line.words)), endBg: '', isPureBg: true };
   }
 
-  // Find range of main words
-  let firstMainIdx = -1;
-  let lastMainIdx = -1;
-  for (let i = 0; i < line.words.length; i++) {
-    const isBg = !!(line.words[i].isBackground || line.words[i].role === 'x-bg');
-    if (!isBg) {
-      if (firstMainIdx === -1) firstMainIdx = i;
-      lastMainIdx = i;
-    }
+  const mainWords = line.words.filter(w => !w.isBackground && w.role !== 'x-bg');
+  const bgWords = line.words.filter(w => (w.isBackground || w.role === 'x-bg') && (w.text || "").trim() !== "\\");
+
+  if (bgWords.length === 0) {
+    return { startBg: '', main: formatWordList(mainWords), endBg: '', isPureBg: false };
   }
 
-  if (firstMainIdx === -1) {
-    return { startBg: '', main: ensureParentheses(formatWordList(line.words)), endBg: '', isPureBg: true };
+  if (mainWords.length === 0) {
+    return { startBg: '', main: ensureParentheses(formatWordList(bgWords)), endBg: '', isPureBg: true };
   }
 
-  const startWords = line.words.slice(0, firstMainIdx).filter(w => (w.text !== undefined && w.text !== null && w.text !== "") || w.text === "\\");
-  const mainWords = line.words.slice(firstMainIdx, lastMainIdx + 1);
-  const endWords = line.words.slice(lastMainIdx + 1).filter(w => (w.text !== undefined && w.text !== null && w.text !== "") || w.text === "\\");
+  const { startBg: startWords, endBg: endWords } = partitionBgWords(bgWords, mainWords);
 
   return {
     startBg: formatBgWordList(startWords),
@@ -4222,10 +4264,21 @@ $('et-apply').onclick = () => {
   const alignedMain = alignChannel(targetMainTokens, oldMainWords, false);
   const alignedBg = alignChannel(targetBgTokens, oldBgWords, true);
 
-  const resultWords = [...alignedMain, ...alignedBg].sort((a, b) => {
-    if (a.startMs !== b.startMs) return a.startMs - b.startMs;
-    return a.tokenIdx - b.tokenIdx;
-  });
+  const startTokenIndices = new Set(startTokens.map(t => t.tokenIdx));
+  const endTokenIndices = new Set(endTokens.map(t => t.tokenIdx));
+
+  const alignedStartBg = alignedBg.filter(w => startTokenIndices.has(w.tokenIdx));
+  const alignedEndBg = alignedBg.filter(w => endTokenIndices.has(w.tokenIdx));
+  const otherBg = alignedBg.filter(w => !startTokenIndices.has(w.tokenIdx) && !endTokenIndices.has(w.tokenIdx));
+
+  let resultWords;
+  if (alignedMain.length === 0) {
+    resultWords = [...alignedBg].sort((a, b) => a.startMs - b.startMs);
+  } else if (alignedBg.length === 0) {
+    resultWords = [...alignedMain].sort((a, b) => a.startMs - b.startMs);
+  } else {
+    resultWords = [...alignedStartBg, ...otherBg, ...alignedMain, ...alignedEndBg];
+  }
 
   if (resultWords.length > 0) {
     const allStarts = resultWords.map(w => w.startMs);
@@ -4797,38 +4850,56 @@ function normalizeLines(tgts) {
 function resolveTimingOverlaps(newLines) {
   if (!newLines || newLines.length === 0) return;
 
+  function resolveWordsInChannel(channelWords) {
+    if (!channelWords || channelWords.length <= 1) return channelWords;
+    channelWords.sort((a, b) => a.startMs - b.startMs);
+    for (let k = 0; k < channelWords.length - 1; k++) {
+      const curr = channelWords[k];
+      const next = channelWords[k+1];
+      if (curr.endMs > next.startMs) {
+        const mid = Math.round((curr.startMs + next.endMs) / 2);
+        if (mid > curr.startMs && mid < next.endMs) {
+          curr.endMs = mid;
+          next.startMs = mid;
+        } else {
+          curr.endMs = next.startMs;
+        }
+      }
+      if (curr.endMs - curr.startMs < 50) {
+        curr.endMs = curr.startMs + 50;
+      }
+    }
+    const lastW = channelWords[channelWords.length - 1];
+    if (lastW && lastW.endMs - lastW.startMs < 50) {
+      lastW.endMs = lastW.startMs + 50;
+    }
+    return channelWords;
+  }
+
   // 1. Resolve word-level overlaps within each line
   newLines.forEach(l => {
-      if (l.words && l.words.length > 0) {
-          // Sort words chronologically
-          l.words.sort((a, b) => a.startMs - b.startMs);
-          
-          // Enforce non-overlapping words
-          for (let k = 0; k < l.words.length - 1; k++) {
-              const curr = l.words[k];
-              const next = l.words[k+1];
-              if (curr.endMs > next.startMs) {
-                  const mid = Math.round((curr.startMs + next.endMs) / 2);
-                  if (mid > curr.startMs && mid < next.endMs) {
-                      curr.endMs = mid;
-                      next.startMs = mid;
-                  } else {
-                      curr.endMs = next.startMs;
-                  }
-              }
-              if (curr.endMs - curr.startMs < 50) {
-                  curr.endMs = curr.startMs + 50;
-              }
-          }
-          const lastW = l.words[l.words.length - 1];
-          if (lastW.endMs - lastW.startMs < 50) {
-              lastW.endMs = lastW.startMs + 50;
-          }
+    if (l.words && l.words.length > 0) {
+      const isLineBg = !!(l.isBackground || l.role === 'x-bg');
+      const mainWords = l.words.filter(w => !w.isBackground && w.role !== 'x-bg');
+      const bgWords = l.words.filter(w => w.isBackground || w.role === 'x-bg');
 
-          // Bound the line times tightly around its resolved word-blocks
-          l.startMs = l.words[0].startMs;
-          l.endMs = l.words[l.words.length - 1].endMs;
+      const resolvedMain = resolveWordsInChannel(mainWords);
+      const resolvedBg = resolveWordsInChannel(bgWords);
+
+      if (resolvedMain.length === 0) {
+        l.words = resolvedBg;
+      } else if (resolvedBg.length === 0) {
+        l.words = resolvedMain;
+      } else {
+        const { startBg, endBg } = partitionBgWords(resolvedBg, resolvedMain);
+        l.words = [...startBg, ...resolvedMain, ...endBg];
       }
+
+      const allStarts = l.words.map(w => w.startMs);
+      const allEnds = l.words.map(w => w.endMs);
+      if (allStarts.length) l.startMs = Math.min(...allStarts);
+      if (allEnds.length) l.endMs = Math.max(...allEnds);
+    }
   });
 
   // 2. Resolve line-level overlaps chronologically
