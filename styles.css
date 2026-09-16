@@ -664,6 +664,17 @@ html, body {
     align-items: center;
     gap: 16px;
     height: 64px;
+    flex-shrink: 0;
+}
+
+.loop-group {
+    display: flex;
+    gap: 4px;
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    padding: 0 8px;
+    margin: 0 4px;
+    flex-shrink: 0;
 }
 
 .play-btn {
@@ -705,6 +716,7 @@ html, body {
     height: 100%;
     min-height: 20px;
     cursor: pointer;
+    touch-action: none;
 }
 
 .progress-bar {
@@ -802,6 +814,7 @@ html, body {
     appearance: none;
     background: #2a2a2e;
     border-radius: 2px;
+    touch-action: none;
 }
 
 .volume-slider::-webkit-slider-thumb {
@@ -1363,17 +1376,48 @@ html, body {
     }
 
     .player-controls {
-        justify-content: center;
+        flex-wrap: wrap;
+        justify-content: flex-start;
+        align-content: center;
+        align-items: center;
+        height: auto;
+        min-height: 128px;
+        padding: 8px 10px;
+        gap: 6px;
     }
 
     .progress-bar-container {
+        order: -2;
         flex-basis: 100%;
+        width: 100%;
+        height: auto;
+        margin: 0;
+        min-height: 22px;
+    }
+
+    .time-display {
         order: -1;
-        margin-bottom: 8px;
+        flex-basis: 100%;
+        width: 100%;
+        min-width: 0;
+        text-align: center;
+    }
+
+    .loop-group {
+        padding: 0 6px;
+        margin: 0 2px;
     }
 
     .volume-control {
-        display: none;
+        display: flex;
+        width: auto;
+        margin-left: auto;
+        gap: 4px;
+        flex-shrink: 0;
+    }
+
+    .volume-slider {
+        width: 56px;
     }
 }
 

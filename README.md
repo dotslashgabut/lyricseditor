@@ -158,6 +158,19 @@ These advanced tools are designed to fix one of the most common issues in lyric 
 
 ## 🌟 What's New
 
+### v0.1.3
+
+- **Mobile Portrait Layout Fix for Player Bar**:
+  - Fixed a critical layout bug where the Play/Pause, Stop, and Loop buttons, along with the time display, could render below the visible viewport on portrait phones (as narrow as 320px wide) and become invisible and untappable.
+  - Restructured the bottom player bar into explicit, correctly-sized rows on mobile: progress bar (full width), time display (centered), and playback controls with the volume slider, all guaranteed to stay within the visible screen.
+  - `.player-controls` no longer gets compressed by the page's flex layout below the height it actually needs.
+- **Volume Control Restored on Mobile**:
+  - The volume slider was previously hidden entirely below 600px width; it's now shown in a compact form alongside the playback buttons.
+- **Improved Touch Dragging for Seek Bar & Volume Slider**:
+  - Added `touch-action: none` to the progress/seek bar and volume slider so dragging on touch devices no longer conflicts with page-scroll gestures.
+- **Markup Refactor for Loop Controls**:
+  - Replaced the inline-styled loop-button group with a reusable `.loop-group` class, enabling responsive resizing on smaller screens.
+
 ### v0.1.2
 
 - **Enhanced LRC (Testing) Support ([rmpc Issue #620](https://github.com/mierak/rmpc/issues/620))**:
